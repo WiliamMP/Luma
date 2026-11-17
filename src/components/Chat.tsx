@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { AtSign, CornerUpLeft, FileText, Hash, Loader2, Pencil, PlusCircle, Reply, SmilePlus, Trash2, X } from "lucide-react";
 import { errorText, fileUrl, isImage, open, openChannel, supabase, upload, useFileUrl, useProfile, type Message, type Target } from "@/lib";
@@ -28,6 +28,9 @@ export function Chat({ me, target, owner, focused, onSeen }: {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
+  /** last message id I had read when this chat opened: "Novas mensagens" goes after it */
+  const [readMark, setReadMark] = useState(0);
+  const jumpToNew = useRef(false);
   const [replying, setReplying] = useState<Message | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -49,19 +52,22 @@ export function Chat({ me, target, owner, focused, onSeen }: {
     setHasMore(false);
     setReplying(null);
     setEditing(null);
+    setReadMark(0);
     let live = true;
-    supabase
-      .from("messages")
-      .select(COLUMNS)
-      .eq(col, target.id)
-      .order("id", { ascending: false })
-      .limit(PAGE)
-      .then(({ data, error }) => {
-        if (!live) return;
-        if (error) setErr(errorText(error));
-        setMessages((data ?? []).reverse());
-        setHasMore(data?.length === PAGE);
-      });
+    // the read marker is fetched with the first page, before opening the chat marks everything read
+    Promise.all([
+      supabase.from("messages").select(COLUMNS).eq(col, target.id).order("id", { ascending: false }).limit(PAGE),
+      supabase.from("reads").select("last_id").eq("target", target.id).maybeSingle(),
+    ]).then(([{ data, error }, { data: read }]) => {
+      if (!live) return;
+      if (error) setErr(errorText(error));
+      const list = (data ?? []).reverse();
+      const mark = Number(read?.last_id ?? 0);
+      jumpToNew.current = mark > 0 && list.some((m) => m.id > mark && m.author_id !== me);
+      setReadMark(mark);
+      setMessages(list);
+      setHasMore(data?.length === PAGE);
+    });
     const close = openChannel(`messages:${target.id}`, undefined, (ch) =>
       ch
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `${col}=eq.${target.id}` }, ({ new: m }) => {
@@ -166,6 +172,11 @@ export function Chat({ me, target, owner, focused, onSeen }: {
     if (!el) return;
     el.scrollTop = anchor.current === null ? el.scrollHeight : el.scrollHeight - anchor.current;
     anchor.current = null;
+    // first load with unread messages: start at "Novas mensagens" instead of the bottom
+    if (jumpToNew.current) {
+      jumpToNew.current = false;
+      el.querySelector("[data-new-divider]")?.scrollIntoView({ block: "center" });
+    }
   }, [messages.length]);
 
   // merge: a Realtime UPDATE may leave out columns that did not change (large TOASTed content)
@@ -249,6 +260,8 @@ export function Chat({ me, target, owner, focused, onSeen }: {
   }
 
   const byId = new Map(messages.map((m) => [m.id, m]));
+  // first message that arrived after my read marker (from someone else)
+  const newAt = readMark > 0 ? messages.findIndex((m) => m.id > readMark && m.author_id !== me) : -1;
 
   return (
     <div
@@ -276,22 +289,29 @@ export function Chat({ me, target, owner, focused, onSeen }: {
         {messages.length === 0 && <p className="px-4 text-sm text-dim">Nenhuma mensagem ainda. Diga oi!</p>}
         {messages.map((m, i) => {
           const prev = messages[i - 1];
-          const grouped = prev && !m.reply_to && prev.author_id === m.author_id && +new Date(m.created_at) - +new Date(prev.created_at) < GROUP_MS;
+          const grouped = i !== newAt && prev && !m.reply_to && prev.author_id === m.author_id && +new Date(m.created_at) - +new Date(prev.created_at) < GROUP_MS;
           return (
-            <Row
-              key={m.id}
-              m={m}
-              parent={m.reply_to ? byId.get(m.reply_to) : undefined}
-              grouped={!!grouped}
-              me={me}
-              myName={myName}
-              canDelete={m.author_id === me || owner}
-              editing={editing === m.id}
-              onReact={(emoji) => react(m, emoji)}
-              onReply={() => startReply(m)}
-              onEdit={() => setEditing(m.id)}
-              onEditDone={(content) => (content === null ? setEditing(null) : saveEdit(m, content))}
-            />
+            <Fragment key={m.id}>
+              {i === newAt && (
+                <div data-new-divider className="mx-4 my-2 flex items-center gap-2 text-xs font-semibold text-danger">
+                  <span className="h-px flex-1 bg-danger" />
+                  Novas mensagens
+                </div>
+              )}
+              <Row
+                m={m}
+                parent={m.reply_to ? byId.get(m.reply_to) : undefined}
+                grouped={!!grouped}
+                me={me}
+                myName={myName}
+                canDelete={m.author_id === me || owner}
+                editing={editing === m.id}
+                onReact={(emoji) => react(m, emoji)}
+                onReply={() => startReply(m)}
+                onEdit={() => setEditing(m.id)}
+                onEditDone={(content) => (content === null ? setEditing(null) : saveEdit(m, content))}
+              />
+            </Fragment>
           );
         })}
       </div>
