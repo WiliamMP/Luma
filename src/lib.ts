@@ -79,6 +79,21 @@ export async function upload(userId: string, file: File) {
   return supabase.storage.from("uploads").getPublicUrl(path).data.publicUrl;
 }
 
+const errorsPt: [string, string][] = [
+  ["Failed to fetch", "Sem conexão com o servidor. Verifique a internet e tente de novo."],
+  ["Invalid login credentials", "Email ou senha incorretos."],
+  ["User already registered", "Já existe uma conta com esse email."],
+  ["Token has expired or is invalid", "Código inválido ou expirado."],
+  ["rate limit", "Muitas tentativas. Espere um pouco e tente de novo."],
+  ["should be different from the old password", "A senha nova precisa ser diferente da antiga."],
+];
+
+/** any thrown/returned error as text for the user, known Supabase/network messages in Portuguese */
+export function errorText(e: unknown) {
+  const m = typeof e === "object" && e && "message" in e ? String(e.message) : String(e);
+  return errorsPt.find(([k]) => m.includes(k))?.[1] ?? m;
+}
+
 /** links open in the system browser, not inside the app webview */
 export function open(href: string) {
   openUrl(href).catch(() => window.open(href, "_blank"));

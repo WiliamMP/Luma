@@ -7,7 +7,8 @@ Desktop chat app (Tauri + React + Supabase): servers, text and voice channels, d
 1. Create a free project at [supabase.com](https://supabase.com).
 2. Supabase > **SQL Editor** > paste all of `supabase/schema.sql` > **Run**. Then the same with `supabase/002_unread.sql`.
 3. Supabase > **Authentication > Sign In / Providers > Email**: turn off **Confirm email** (a desktop app has no page for the confirmation link to land on). Leave it on only if you set up a redirect.
-4. Copy `.env.example` to `.env` and fill in the values from **Project Settings > API** (Project URL and the `anon` public key).
+4. Supabase > **Authentication > Emails > Reset Password**: put the code in the message body, e.g. `Seu código do Luma: {{ .Token }}`. The app's "Esqueci minha senha" screen asks for that code (the default template only has a link, which has nowhere to land in a desktop app).
+5. Copy `.env.example` to `.env` and fill in the values from **Project Settings > API** (Project URL and the `anon` public key).
 
 ## Run
 

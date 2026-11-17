@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { MessagesSquare, Plus } from "lucide-react";
-import { cn, supabase, type Server } from "@/lib";
+import { cn, errorText, supabase, type Server } from "@/lib";
 import type { Unread } from "@/unread";
 import { Badge, Initials, Modal, button, input } from "./ui";
 
@@ -61,7 +61,7 @@ function AddServer({ onClose, onDone }: { onClose: () => void; onDone: (id: stri
   async function run(fn: "create_server" | "join_server", args: Record<string, string>) {
     setErr(null);
     const { data, error } = await supabase.rpc(fn, args);
-    if (error) setErr(error.message);
+    if (error) setErr(errorText(error));
     else onDone(data as string);
   }
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Hash, Headphones, HeadphoneOff, LogOut, Mic, MicOff, PhoneOff, Plus, Settings, Trash2, Volume2 } from "lucide-react";
-import { cn, putProfile, supabase, upload, useProfile, type Channel, type Server, type Target } from "@/lib";
+import { cn, errorText, putProfile, supabase, upload, useProfile, type Channel, type Server, type Target } from "@/lib";
 import type { Unread } from "@/unread";
 import { Avatar, Badge, Modal, Name, button, ghost, input } from "./ui";
 
@@ -163,7 +163,7 @@ function ChannelDialog({ server, onClose }: { server: Server; onClose: () => voi
   async function create(e: React.FormEvent) {
     e.preventDefault();
     const { error } = await supabase.from("channels").insert({ server_id: server.id, name: kind === "text" ? name.toLowerCase().replace(/\s+/g, "-") : name, kind });
-    if (error) setErr(error.message);
+    if (error) setErr(errorText(error));
     else onClose();
   }
   return (
@@ -250,7 +250,7 @@ function NewDm({ onClose, onOpen }: { onClose: () => void; onOpen: (t: Target) =
     setErr(null);
     const { data } = await supabase.from("profiles").select("id, username").eq("username", name.trim()).maybeSingle();
     if (!data) return setErr("Usuário não encontrado");
-    openDm(data.id, data.username).then(onOpen, (e) => setErr(e.message));
+    openDm(data.id, data.username).then(onOpen, (e) => setErr(errorText(e)));
   }
   return (
     <Modal title="Nova conversa" onClose={onClose}>
@@ -318,7 +318,7 @@ function ProfileDialog({ me, onClose }: { me: string; onClose: () => void }) {
   async function save(patch: { username?: string; avatar_url?: string }) {
     setErr(null);
     const { data, error } = await supabase.from("profiles").update(patch).eq("id", me).select("id, username, avatar_url").single();
-    if (error) setErr(error.code === "23505" ? "Nome já em uso" : error.message);
+    if (error) setErr(error.code === "23505" ? "Nome já em uso" : errorText(error));
     else putProfile(data);
   }
 
@@ -333,7 +333,7 @@ function ProfileDialog({ me, onClose }: { me: string; onClose: () => void }) {
             hidden
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) upload(me, f).then((url) => save({ avatar_url: url }), (e) => setErr(e.message));
+              if (f) upload(me, f).then((url) => save({ avatar_url: url }), (e) => setErr(errorText(e)));
             }}
           />
         </label>

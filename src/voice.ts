@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { supabase } from "./lib";
+import { errorText, supabase } from "./lib";
 
 // ponytail: STUN only, so peers behind strict/symmetric NAT may not connect. Add a TURN server here if that happens.
 const ICE: RTCConfiguration = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
@@ -87,7 +87,7 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
           .on("broadcast", { event: "signal" }, ({ payload }) => onSignal(payload as Signal).catch(console.error))
           .subscribe((status) => status === "SUBSCRIBED" && !cancelled && setReady(true));
       })
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+      .catch((e) => setError(errorText(e)));
     return () => {
       cancelled = true;
       setReady(false);

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AtSign, FileText, Hash, Loader2, PlusCircle, Trash2 } from "lucide-react";
-import { isImage, open, supabase, upload, useProfile, type Message, type Target } from "@/lib";
+import { errorText, isImage, open, supabase, upload, useProfile, type Message, type Target } from "@/lib";
 import { Avatar } from "./ui";
 
 const GROUP_MS = 5 * 60 * 1000;
@@ -58,7 +58,7 @@ export function Chat({ me, target, focused, onSeen }: {
       .insert({ [col]: target.id, content, attachment_url })
       .select("id, author_id, content, attachment_url, created_at")
       .single();
-    if (error) return setErr(error.message);
+    if (error) return setErr(errorText(error));
     setMessages((prev) => (prev.some((p) => p.id === data.id) ? prev : [...prev, data]));
   }
 
@@ -67,7 +67,7 @@ export function Chat({ me, target, focused, onSeen }: {
     try {
       for (const f of files) await send("", await upload(me, f));
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(errorText(e));
     }
     setBusy(false);
   }
