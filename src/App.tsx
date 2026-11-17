@@ -12,6 +12,7 @@ import { Chat } from "./components/Chat";
 import { Members } from "./components/Members";
 import { Stage } from "./components/Stage";
 import { ProfileProvider } from "./components/Profile";
+import { QuickSwitch } from "./components/QuickSwitch";
 import { WindowControls, dragWindow } from "./components/WindowControls";
 
 export default function App() {
@@ -215,9 +216,12 @@ function Main({ me }: { me: string }) {
   }
 
   const toDm = (t: Target) => (setSelected("home"), setTarget(t));
+  // Ctrl+K: server + channel at once (ServerSidebar keeps an open target that belongs to the server)
+  const jump = (t: Target, serverId: string | null) => (setSelected(serverId ?? "home"), setTarget(t));
 
   return (
     <ProfileProvider me={me} onDm={toDm}>
+      <QuickSwitch me={me} servers={servers} onPick={jump} />
       <div className="flex h-full">
         <Rail servers={servers} unread={unread} selected={selected} onSelect={pick} onJoined={(id) => loadServers().then(() => pick(id))} />
         <div className="flex w-60 shrink-0 flex-col bg-panel">
