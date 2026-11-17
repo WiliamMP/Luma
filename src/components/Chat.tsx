@@ -3,6 +3,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { AtSign, CornerUpLeft, FileText, Hash, Loader2, Pencil, PlusCircle, Reply, SmilePlus, Trash2, X } from "lucide-react";
 import { errorText, fileUrl, isImage, open, openChannel, supabase, upload, useFileUrl, useProfile, type Message, type Target } from "@/lib";
 import { Avatar, Name } from "./ui";
+import { format, mentions } from "@/format";
 import { useProfileCard } from "./Profile";
 
 const GROUP_MS = 5 * 60 * 1000;
@@ -20,6 +21,10 @@ export function Chat({ me, target, owner, focused, onSeen }: {
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
+  const myName = useProfile(me)?.username;
+  /** @mention autocomplete: matching usernames and the highlighted one */
+  const [suggest, setSuggest] = useState<{ names: string[]; pick: number } | null>(null);
+  const suggestSeq = useRef(0);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -99,8 +104,37 @@ export function Chat({ me, target, owner, focused, onSeen }: {
     };
   }, [target.id]);
 
-  function onType(value: string) {
+  // "@wi" right before the caret: look up usernames starting with "wi"
+  function lookupMention(value: string, caret: number) {
+    const m = /(?:^|\s)@([a-zA-Z0-9_.]*)$/.exec(value.slice(0, caret));
+    const seq = ++suggestSeq.current;
+    if (!m) return setSuggest(null);
+    supabase
+      .from("profiles")
+      .select("username")
+      .ilike("username", `${m[1].replace(/[\\%_]/g, "\\$&")}%`) // _ and % are wildcards in LIKE
+      .order("username")
+      .limit(6)
+      .then(({ data }) => {
+        if (seq !== suggestSeq.current) return; // a newer keystroke already asked
+        const names = (data ?? []).map((p) => p.username as string);
+        setSuggest(names.length ? { names, pick: 0 } : null);
+      });
+  }
+
+  function insertMention(name: string) {
+    const el = composer.current;
+    const caret = el?.selectionStart ?? text.length;
+    const before = text.slice(0, caret).replace(/@[a-zA-Z0-9_.]*$/, `@${name} `);
+    const next = before + text.slice(caret);
+    setText(next);
+    setSuggest(null);
+    requestAnimationFrame(() => el?.setSelectionRange(before.length, before.length));
+  }
+
+  function onType(value: string, caret = value.length) {
     setText(value);
+    lookupMention(value, caret);
     if (!value || Date.now() - lastTyped.current < 2500) return;
     lastTyped.current = Date.now();
     typingChan.current?.send({ type: "broadcast", event: "typing", payload: { user: me } });
@@ -190,6 +224,15 @@ export function Chat({ me, target, owner, focused, onSeen }: {
   }
 
   function onKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (suggest) {
+      const n = suggest.names.length;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        return setSuggest({ ...suggest, pick: (suggest.pick + (e.key === "ArrowDown" ? 1 : n - 1)) % n });
+      }
+      if (e.key === "Enter" || e.key === "Tab") return e.preventDefault(), insertMention(suggest.names[suggest.pick]);
+      if (e.key === "Escape") return setSuggest(null);
+    }
     if (e.key === "Escape" && replying) return setReplying(null);
     // arrow up in an empty box edits my last text message
     if (e.key === "ArrowUp" && !text) {
@@ -241,6 +284,7 @@ export function Chat({ me, target, owner, focused, onSeen }: {
               parent={m.reply_to ? byId.get(m.reply_to) : undefined}
               grouped={!!grouped}
               me={me}
+              myName={myName}
               canDelete={m.author_id === me || owner}
               editing={editing === m.id}
               onReact={(emoji) => react(m, emoji)}
@@ -262,6 +306,19 @@ export function Chat({ me, target, owner, focused, onSeen }: {
             </button>
           </div>
         )}
+        {suggest && (
+          <div className="mb-1 overflow-hidden rounded-lg border border-line bg-bg py-1 text-sm shadow-xl">
+            {suggest.names.map((name, i) => (
+              <button
+                key={name}
+                className={`block w-full px-3 py-1.5 text-left ${i === suggest.pick ? "bg-primary text-white" : "hover:bg-raised"}`}
+                onMouseDown={(e) => (e.preventDefault(), insertMention(name))}
+              >
+                @{name}
+              </button>
+            ))}
+          </div>
+        )}
         <div className={`flex items-start gap-2 bg-raised px-3 py-2.5 ${replying ? "rounded-b-lg" : "rounded-lg"}`}>
           <label title="Enviar arquivo" className="cursor-pointer pt-0.5 text-dim hover:text-fg">
             {busy ? <Loader2 className="size-5 animate-spin" /> : <PlusCircle className="size-5" />}
@@ -274,7 +331,8 @@ export function Chat({ me, target, owner, focused, onSeen }: {
             placeholder={`Conversar em ${target.kind === "channel" ? "#" : "@"}${target.name}`}
             value={text}
             maxLength={4000}
-            onChange={(e) => onType(e.target.value)}
+            onChange={(e) => onType(e.target.value, e.target.selectionStart)}
+            onBlur={() => setSuggest(null)}
             onKeyDown={onKey}
             onPaste={(e) => {
               const files = [...e.clipboardData.files];
@@ -307,11 +365,12 @@ function Typing({ ids }: { ids: string[] }) {
   return <div className="h-4 truncate px-1 pt-0.5 text-xs text-dim">{names}</div>;
 }
 
-function Row({ m, parent, grouped, me, canDelete, editing, onReact, onReply, onEdit, onEditDone }: {
+function Row({ m, parent, grouped, me, myName, canDelete, editing, onReact, onReply, onEdit, onEditDone }: {
   m: Message;
   parent: Message | undefined;
   grouped: boolean;
   me: string;
+  myName: string | undefined;
   canDelete: boolean;
   editing: boolean;
   onReact: (emoji: string) => void;
@@ -324,6 +383,7 @@ function Row({ m, parent, grouped, me, canDelete, editing, onReact, onReply, onE
   const card = useProfileCard();
   const time = new Date(m.created_at);
   const mine = m.author_id === me;
+  const mentioned = !mine && mentions(m.content, myName);
   const [picking, setPicking] = useState(false);
   const tool = "rounded p-1 text-dim hover:bg-raised hover:text-fg";
   // defensive: only well-formed entries (emoji -> list of ids) are shown
@@ -331,7 +391,7 @@ function Row({ m, parent, grouped, me, canDelete, editing, onReact, onReply, onE
   return (
     <div
       id={`msg-${m.id}`}
-      className={`group relative px-4 hover:bg-raised/40 ${grouped ? "py-0.5" : "mt-3 py-0.5"}`}
+      className={`group relative border-l-2 px-4 ${mentioned ? "border-primary bg-primary/10 hover:bg-primary/15" : "border-transparent hover:bg-raised/40"} ${grouped ? "py-0.5" : "mt-3 py-0.5"}`}
       onMouseLeave={() => setPicking(false)}
     >
       {m.reply_to && <Quote id={m.reply_to} loaded={parent} />}
@@ -361,7 +421,7 @@ function Row({ m, parent, grouped, me, canDelete, editing, onReact, onReply, onE
           ) : (
             m.content && (
               <p className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">
-                {linkify(m.content)}
+                {format(m.content, myName)}
                 {m.edited_at && (
                   <span className="ml-1 text-[11px] text-dim" title={new Date(m.edited_at).toLocaleString()}>
                     (editado)
@@ -497,17 +557,5 @@ function Attachment({ path }: { path: string }) {
     <button className="mt-1 flex items-center gap-2 rounded-lg border border-line bg-raised px-3 py-2 text-sm text-primary hover:underline" onClick={show}>
       <FileText className="size-5" /> {name}
     </button>
-  );
-}
-
-function linkify(text: string) {
-  return text.split(/(https?:\/\/\S+)/g).map((part, i) =>
-    i % 2 ? (
-      <a key={i} href={part} className="text-primary hover:underline" onClick={(e) => (e.preventDefault(), open(part))}>
-        {part}
-      </a>
-    ) : (
-      part
-    ),
   );
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { getProfile, supabase, type Target } from "./lib";
+import { mentions } from "./format";
 
 /** target (channel id or dm id) -> unread count; server is null for DMs */
 export type Unread = Map<string, { server: string | null; count: number }>;
@@ -39,7 +40,7 @@ export function useInbox(me: string, open: Target | null, focused: boolean) {
         const { open, focused } = view.current;
         if (focused && open?.id === (m.channel_id ?? m.dm_id)) return; // reading it right now
         load();
-        if (!focused) notify(m).catch(console.error); // app in front: the badge is enough
+        if (!focused) notify(m, me).catch(console.error); // app in front: the badge is enough
       })
       .subscribe();
     return () => {
@@ -67,7 +68,7 @@ export function useInbox(me: string, open: Target | null, focused: boolean) {
 const MUTED_KEY = "luma:muted-servers";
 const muted = new Set<string>(JSON.parse(localStorage.getItem(MUTED_KEY) ?? "[]"));
 
-/** muted servers keep their unread badges but send no Windows notification */
+/** muted servers keep their unread badges but send no Windows notification (except @mentions) */
 export const isMuted = (server: string) => muted.has(server);
 
 export function toggleMute(server: string) {
@@ -75,15 +76,17 @@ export function toggleMute(server: string) {
   localStorage.setItem(MUTED_KEY, JSON.stringify([...muted]));
 }
 
-async function notify(m: Incoming) {
+async function notify(m: Incoming, me: string) {
+  // an @mention gets through a muted server
+  const mentioned = mentions(m.content, (await getProfile(me))?.username);
   let title = "";
   if (m.channel_id) {
     const { data } = await supabase.from("channels").select("name, server_id, servers(name)").eq("id", m.channel_id).maybeSingle();
-    if (data && isMuted(data.server_id)) return;
+    if (data && isMuted(data.server_id) && !mentioned) return;
     if (data) title = ` em #${data.name} (${(data.servers as unknown as { name: string } | null)?.name ?? ""})`;
   }
   const author = await getProfile(m.author_id);
-  title = (author?.username ?? "Nova mensagem") + title;
+  title = (author?.username ?? "Nova mensagem") + (mentioned ? " mencionou você" : "") + title;
   sendNotification({ title, body: m.content ? m.content.slice(0, 200) : "Enviou um arquivo" });
   getCurrentWindow().requestUserAttention(UserAttentionType.Informational);
 }
