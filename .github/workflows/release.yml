@@ -52,3 +52,15 @@ jobs:
           prerelease: false
           # latest.json points the updater at the NSIS setup
           updaterJsonPreferNsis: true
+
+      # tell apps that are open right now (App.tsx UpdateBar listens on the "releases" broadcast topic)
+      - name: Announce the release
+        continue-on-error: true # the release is out either way; apps also check every 30 min
+        shell: bash
+        env:
+          URL: ${{ secrets.VITE_SUPABASE_URL }}
+          KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          curl -sS --fail -X POST "$URL/realtime/v1/api/broadcast" \
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+            -d "{\"messages\":[{\"topic\":\"releases\",\"event\":\"published\",\"payload\":{\"version\":\"${GITHUB_REF_NAME#v}\"}}]}"

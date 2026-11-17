@@ -38,13 +38,30 @@ export default function App() {
   );
 }
 
-/** checks GitHub Releases once on startup; installers are signed, the app only accepts our key (pubkey in tauri.conf.json) */
+/**
+ * Looks for a new release on startup, when the release workflow announces one on the public
+ * "releases" broadcast topic (so open apps hear about it right away), and every 30 min as a fallback
+ * for apps that were offline at that moment. Installers are signed: the app only accepts our key
+ * (pubkey in tauri.conf.json), so a fake announcement can at most trigger a harmless check.
+ */
 function UpdateBar() {
   const [update, setUpdate] = useState<Update | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
   useEffect(() => {
-    check().then(setUpdate, () => {}); // no internet / dev build: stay quiet
+    // keep the first update found: replacing it mid-download would confuse the bar
+    const look = () => check().then((u) => u && setUpdate((prev) => prev ?? u), () => {}); // offline / dev build: stay quiet
+    look();
+    const every = setInterval(look, 30 * 60 * 1000);
+    // the announcement can arrive a moment before GitHub serves the new latest.json: look again shortly after
+    const ch = supabase
+      .channel("releases")
+      .on("broadcast", { event: "published" }, () => (look(), setTimeout(look, 60 * 1000)))
+      .subscribe();
+    return () => {
+      clearInterval(every);
+      supabase.removeChannel(ch);
+    };
   }, []);
 
   async function install(u: Update) {
