@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Hash, Headphones, HeadphoneOff, Mic, Pencil, MicOff, PhoneOff, Plus, ScreenShare, ScreenShareOff, Settings, Trash2, Volume2 } from "lucide-react";
-import { cn, errorText, openChannel, openDm, supabase, useProfile, type Channel, type Server, type Target } from "@/lib";
+import { cn, errorText, openChannel, openDm, supabase, useProfile, type Channel, type Server, type Status, type Target } from "@/lib";
 import { useProfileCard } from "./Profile";
 import { useVolumes } from "@/voice";
 import { isMuted, toggleMute, type Unread } from "@/unread";
 import { Avatar, Badge, Modal, Name, button, ghost, input } from "./ui";
 
 /** v: voice protocol version of that person's app (see VOICE_PROTOCOL) */
-export type Presence = Map<string, { voice: string | null; screen: boolean; v: number }>;
+export type Presence = Map<string, { voice: string | null; screen: boolean; v: number; status: Status }>;
 
 const row = (active: boolean) =>
   cn(
@@ -341,7 +341,7 @@ export function DmSidebar({ me, target, onTarget, unread, presence }: {
           <Plus className="size-4" /> Nova conversa
         </button>
         {dms.map((d) => (
-          <DmRow key={d.id} id={d.other} active={target?.id === d.id} online={presence.has(d.other)} unread={unread.get(d.id)?.count ?? 0} onClick={(name) => onTarget({ kind: "dm", id: d.id, name })} />
+          <DmRow key={d.id} id={d.other} active={target?.id === d.id} online={presence.get(d.other)?.status ?? false} unread={unread.get(d.id)?.count ?? 0} onClick={(name) => onTarget({ kind: "dm", id: d.id, name })} />
         ))}
       </div>
       {adding && <NewDm onClose={() => setAdding(false)} onOpen={(t) => (setAdding(false), onTarget(t))} />}
@@ -349,7 +349,7 @@ export function DmSidebar({ me, target, onTarget, unread, presence }: {
   );
 }
 
-function DmRow({ id, active, online, unread, onClick }: { id: string; active: boolean; online: boolean; unread: number; onClick: (name: string) => void }) {
+function DmRow({ id, active, online, unread, onClick }: { id: string; active: boolean; online: Status | false; unread: number; onClick: (name: string) => void }) {
   const p = useProfile(id);
   return (
     <button className={row(active)} onClick={() => onClick(p?.username ?? "")}>
@@ -383,7 +383,7 @@ function NewDm({ onClose, onOpen }: { onClose: () => void; onOpen: (t: Target) =
 
 // ───────── bottom: me + voice controls ─────────
 
-export function UserPanel({ me, voiceName, voiceState, muted, deafened, onMute, onDeafen, onHangUp, sharing, onShare }: {
+export function UserPanel({ me, voiceName, voiceState, muted, deafened, onMute, onDeafen, onHangUp, sharing, onShare, status }: {
   me: string;
   voiceName: string | null;
   voiceState: { ready: boolean; error: string | null };
@@ -394,6 +394,8 @@ export function UserPanel({ me, voiceName, voiceState, muted, deafened, onMute, 
   onHangUp: () => void;
   sharing: boolean;
   onShare: () => void;
+  /** my status as others see it (auto-away included) */
+  status: Status;
 }) {
   const card = useProfileCard();
   const icon = "grid size-8 place-items-center rounded-md text-dim hover:bg-raised hover:text-fg";
@@ -419,7 +421,7 @@ export function UserPanel({ me, voiceName, voiceState, muted, deafened, onMute, 
       )}
       <div className="flex items-center gap-2 px-2 py-2">
         <button className="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left hover:bg-raised/60" onClick={() => card.show(me)}>
-          <Avatar id={me} size={32} online />
+          <Avatar id={me} size={32} online={status} />
           <Name id={me} className="min-w-0 flex-1 truncate text-sm font-medium" />
         </button>
         <button title={muted ? "Ativar microfone" : "Silenciar"} className={cn(icon, muted && "text-danger")} onClick={onMute}>

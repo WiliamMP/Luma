@@ -41,7 +41,7 @@ export function Members({ server, me, presence }: { server: Server; me: string; 
                 style={{ opacity: presence.has(id) ? 1 : 0.45 }}
                 onClick={() => card.show(id)}
               >
-                <Avatar id={id} size={32} online={presence.has(id)} />
+                <Avatar id={id} size={32} online={presence.get(id)?.status ?? false} />
                 <div className="min-w-0 flex-1">
                   <Name id={id} className="block truncate text-sm" />
                   <Status id={id} />

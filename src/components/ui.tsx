@@ -1,6 +1,8 @@
 import { useEffect, type ReactNode } from "react";
 import { X } from "lucide-react";
-import { cn, useFileUrl, useProfile } from "@/lib";
+import { cn, useFileUrl, useProfile, type Status } from "@/lib";
+
+export const STATUS_DOT: Record<Status, string> = { online: "bg-online", away: "bg-[#f5a524]", dnd: "bg-danger" };
 
 const hues = ["#7c5cff", "#3ecf8e", "#f0475b", "#f5a524", "#23b5d3", "#e85dce"];
 
@@ -18,7 +20,8 @@ export function Initials({ name, url, size = 40, className }: { name: string; ur
   );
 }
 
-export function Avatar({ id, size = 40, online }: { id: string; size?: number; online?: boolean }) {
+/** `online`: a status shows its colored dot, false a grey (offline) dot, undefined no dot */
+export function Avatar({ id, size = 40, online }: { id: string; size?: number; online?: Status | false }) {
   const p = useProfile(id);
   const url = useFileUrl(p?.avatar_url);
   return (
@@ -28,7 +31,7 @@ export function Avatar({ id, size = 40, online }: { id: string; size?: number; o
         <span
           className={cn(
             "absolute -right-0.5 -bottom-0.5 size-3.5 rounded-full border-[3px] border-panel",
-            online ? "bg-online" : "bg-dim",
+            online ? STATUS_DOT[online] : "bg-dim",
           )}
         />
       )}

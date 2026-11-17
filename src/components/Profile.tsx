@@ -2,8 +2,9 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { LogOut } from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
 import { useMic } from "@/voice";
-import { cn, errorText, openDm, putProfile, supabase, upload, useProfile, PROFILE_COLUMNS, type Profile, type Target } from "@/lib";
-import { Avatar, Modal, button, ghost, input } from "./ui";
+import { useMyStatus } from "@/unread";
+import { cn, errorText, openDm, putProfile, supabase, upload, useProfile, PROFILE_COLUMNS, STATUS_LABEL, type Profile, type Status, type Target } from "@/lib";
+import { Avatar, Modal, STATUS_DOT, button, ghost, input } from "./ui";
 
 const Ctx = createContext({ show: (_id: string) => {}, edit: () => {} });
 
@@ -59,6 +60,7 @@ function ProfileCard({ id, me, onClose, onDm, onEdit }: { id: string; me: string
           <p className="selectable whitespace-pre-wrap break-words text-sm">{p.bio}</p>
         </>
       )}
+      {id === me && <StatusPicker />}
       {err && <p className="mt-3 text-sm text-danger">{err}</p>}
       <div className="mt-5 flex justify-end">
         {id === me ? (
@@ -167,4 +169,26 @@ function Version() {
   const [v, setV] = useState("");
   useEffect(() => void getVersion().then(setV, () => {}), []);
   return v ? <span className="text-xs text-dim">Luma v{v}</span> : null;
+}
+
+function StatusPicker() {
+  const [status, setStatus] = useMyStatus();
+  return (
+    <div className="mt-5">
+      <div className="mb-1 text-xs font-semibold uppercase text-dim">Status</div>
+      <div className="flex gap-1">
+        {(Object.keys(STATUS_LABEL) as Status[]).map((s) => (
+          <button
+            key={s}
+            className={cn("flex items-center gap-2 rounded-md px-3 py-1.5 text-sm", s === status ? "bg-raised text-fg" : "text-dim hover:bg-raised/60 hover:text-fg")}
+            onClick={() => setStatus(s)}
+          >
+            <span className={cn("size-2.5 rounded-full", STATUS_DOT[s])} />
+            {STATUS_LABEL[s]}
+          </button>
+        ))}
+      </div>
+      {status === "dnd" && <p className="mt-1 text-xs text-dim">Sem notificações enquanto estiver em Não perturbe.</p>}
+    </div>
+  );
 }

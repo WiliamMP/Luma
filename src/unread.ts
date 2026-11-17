@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { getProfile, supabase, type Target } from "./lib";
+import { useSyncExternalStore } from "react";
+import { getProfile, supabase, type Status, type Target } from "./lib";
 import { mentions } from "./format";
 
 /** target (channel id or dm id) -> unread count; server is null for DMs */
@@ -64,6 +65,26 @@ export function useInbox(me: string, open: Target | null, focused: boolean) {
   return { unread: shown, markRead };
 }
 
+// my chosen status, saved on this device; "Não perturbe" stops every notification
+const STATUS_KEY = "luma:status";
+let myStatus = (localStorage.getItem(STATUS_KEY) as Status | null) ?? "online";
+const statusListeners = new Set<() => void>();
+
+export function useMyStatus(): [Status, (s: Status) => void] {
+  const value = useSyncExternalStore(
+    (l) => (statusListeners.add(l), () => statusListeners.delete(l)),
+    () => myStatus,
+  );
+  return [
+    value,
+    (s) => {
+      myStatus = s;
+      localStorage.setItem(STATUS_KEY, s);
+      statusListeners.forEach((l) => l());
+    },
+  ];
+}
+
 // ponytail: mute is kept per device in localStorage. Move it to a table if it should follow the account.
 const MUTED_KEY = "luma:muted-servers";
 const muted = new Set<string>(JSON.parse(localStorage.getItem(MUTED_KEY) ?? "[]"));
@@ -77,6 +98,7 @@ export function toggleMute(server: string) {
 }
 
 async function notify(m: Incoming, me: string) {
+  if (myStatus === "dnd") return;
   // an @mention gets through a muted server
   const mentioned = mentions(m.content, (await getProfile(me))?.username);
   let title = "";

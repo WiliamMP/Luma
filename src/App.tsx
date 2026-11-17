@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import type { RealtimeChannel, Session } from "@supabase/supabase-js";
-import { configured, errorText, supabase, type Server, type Target } from "./lib";
+import { configured, errorText, supabase, type Server, type Status, type Target } from "./lib";
 import { chime, useVoice, VOICE_PROTOCOL } from "./voice";
-import { useInbox } from "./unread";
+import { useInbox, useMyStatus } from "./unread";
 import { Auth } from "./components/Auth";
 import { Rail } from "./components/Rail";
 import { DmSidebar, ServerSidebar, UserPanel, type Presence } from "./components/Sidebar";
@@ -103,6 +103,16 @@ function Main({ me }: { me: string }) {
   const [focused, setFocused] = useState(document.hasFocus());
   const { unread, markRead } = useInbox(me, target, focused);
 
+  // "Online" turns into "Ausente" after 10 minutes with the window in the background
+  const [chosen] = useMyStatus();
+  const [idle, setIdle] = useState(false);
+  useEffect(() => {
+    if (focused) return setIdle(false);
+    const t = setTimeout(() => setIdle(true), 10 * 60 * 1000);
+    return () => clearTimeout(t);
+  }, [focused]);
+  const status: Status = chosen === "online" && idle ? "away" : chosen;
+
   useEffect(() => {
     const on = () => setFocused(true);
     const off = () => setFocused(false);
@@ -139,9 +149,14 @@ function Main({ me }: { me: string }) {
   useEffect(() => {
     const ch = supabase.channel("online", { config: { presence: { key: me } } });
     ch.on("presence", { event: "sync" }, () => {
-      const state = ch.presenceState<{ voice: string | null; screen?: boolean; v?: number }>();
+      const state = ch.presenceState<{ voice: string | null; screen?: boolean; v?: number; status?: Status }>();
       setPresence(
-        new Map(Object.entries(state).map(([id, metas]) => [id, { voice: metas[0]?.voice ?? null, screen: !!metas[0]?.screen, v: metas[0]?.v ?? 1 }])),
+        new Map(
+          Object.entries(state).map(([id, metas]) => [
+            id,
+            { voice: metas[0]?.voice ?? null, screen: !!metas[0]?.screen, v: metas[0]?.v ?? 1, status: metas[0]?.status ?? "online" },
+          ]),
+        ),
       );
     }).subscribe((s) => setSubscribed(s === "SUBSCRIBED"));
     online.current = ch;
@@ -151,8 +166,8 @@ function Main({ me }: { me: string }) {
   // announce our voice room only once the signalling channel is up, so peers do not call us too early
   useEffect(() => {
     const room = voiceState.ready ? voice?.id ?? null : null;
-    if (subscribed) online.current?.track({ voice: room, screen: !!room && !!voiceState.screen, v: VOICE_PROTOCOL });
-  }, [subscribed, voiceState.ready, voice?.id, !!voiceState.screen]);
+    if (subscribed) online.current?.track({ voice: room, screen: !!room && !!voiceState.screen, v: VOICE_PROTOCOL, status });
+  }, [subscribed, voiceState.ready, voice?.id, !!voiceState.screen, status]);
 
   // chime when someone joins or leaves my call (and when I join or leave it); quiet while deafened
   const others = voiceState.ready ? peers.filter((id) => id !== me).sort().join(",") : null;
@@ -216,6 +231,7 @@ function Main({ me }: { me: string }) {
             onMute={() => setMuted(!muted)}
             onDeafen={() => setDeafened(!deafened)}
             onHangUp={() => setVoice(null)}
+          status={status}
             sharing={!!voiceState.screen}
             onShare={() => (voiceState.screen ? voiceState.stopShare() : voiceState.share())}
           />

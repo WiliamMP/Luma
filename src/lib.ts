@@ -22,6 +22,10 @@ export type Message = {
   /** emoji -> ids of who reacted */
   reactions: Record<string, string[]>;
 };
+/** presence status; "away" is also set automatically after 10 min with the window in the background */
+export type Status = "online" | "away" | "dnd";
+export const STATUS_LABEL: Record<Status, string> = { online: "Online", away: "Ausente", dnd: "Não perturbe" };
+
 /** what the chat pane shows: a server text channel or a DM thread */
 export type Target = { kind: "channel" | "dm"; id: string; name: string };
 
