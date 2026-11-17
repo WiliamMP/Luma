@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AtSign, FileText, Hash, Loader2, PlusCircle, Trash2 } from "lucide-react";
+import { AtSign, CornerUpLeft, FileText, Hash, Loader2, Pencil, PlusCircle, Reply, Trash2, X } from "lucide-react";
 import { errorText, fileUrl, isImage, open, supabase, upload, useFileUrl, useProfile, type Message, type Target } from "@/lib";
-import { Avatar } from "./ui";
+import { Avatar, Name } from "./ui";
 import { useProfileCard } from "./Profile";
 
 const GROUP_MS = 5 * 60 * 1000;
 const PAGE = 100;
-const COLUMNS = "id, author_id, content, attachment_url, created_at";
+const COLUMNS = "id, author_id, content, attachment_url, created_at, edited_at, reply_to";
 
 export function Chat({ me, target, focused, onSeen }: {
   me: string;
@@ -19,7 +19,10 @@ export function Chat({ me, target, focused, onSeen }: {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
+  const [replying, setReplying] = useState<Message | null>(null);
+  const [editing, setEditing] = useState<number | null>(null);
   const list = useRef<HTMLDivElement>(null);
+  const composer = useRef<HTMLTextAreaElement>(null);
   const loadingOlder = useRef(false);
   /** distance from the bottom to keep after older messages are prepended, so the view does not jump */
   const anchor = useRef<number | null>(null);
@@ -30,6 +33,8 @@ export function Chat({ me, target, focused, onSeen }: {
   useEffect(() => {
     setMessages([]);
     setHasMore(false);
+    setReplying(null);
+    setEditing(null);
     let live = true;
     supabase
       .from("messages")
@@ -46,6 +51,9 @@ export function Chat({ me, target, focused, onSeen }: {
       .channel(`messages:${target.id}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `${col}=eq.${target.id}` }, ({ new: m }) =>
         setMessages((prev) => (prev.some((p) => p.id === m.id) ? prev : [...prev, m as Message])),
+      )
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages", filter: `${col}=eq.${target.id}` }, ({ new: m }) =>
+        replace(m as Message),
       )
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "messages" }, ({ old }) =>
         setMessages((prev) => prev.filter((p) => p.id !== old.id)),
@@ -85,11 +93,20 @@ export function Chat({ me, target, focused, onSeen }: {
     anchor.current = null;
   }, [messages.length]);
 
-  async function send(content: string, attachment_url: string | null = null) {
+  const replace = (m: Message) => setMessages((prev) => prev.map((p) => (p.id === m.id ? m : p)));
+
+  /** the reply (if any) goes with the first thing sent after picking "Responder" */
+  function takeReply() {
+    const id = replying?.id ?? null;
+    setReplying(null);
+    return id;
+  }
+
+  async function send(content: string, attachment_url: string | null = null, reply_to: number | null = null) {
     setErr(null);
     const { data, error } = await supabase
       .from("messages")
-      .insert({ [col]: target.id, content, attachment_url })
+      .insert({ [col]: target.id, content, attachment_url, reply_to })
       .select(COLUMNS)
       .single();
     if (error) return setErr(errorText(error));
@@ -98,22 +115,48 @@ export function Chat({ me, target, focused, onSeen }: {
 
   async function attach(files: FileList | File[]) {
     setBusy(true);
+    let reply = takeReply();
     try {
-      for (const f of files) await send("", await upload(me, f));
+      for (const f of files) {
+        await send("", await upload(me, f), reply);
+        reply = null;
+      }
     } catch (e) {
       setErr(errorText(e));
     }
     setBusy(false);
   }
 
+  async function saveEdit(m: Message, content: string) {
+    setEditing(null);
+    if (!content || content === m.content) return;
+    const { data, error } = await supabase.from("messages").update({ content }).eq("id", m.id).select(COLUMNS).single();
+    if (error) setErr(errorText(error));
+    else replace(data);
+  }
+
+  function startReply(m: Message) {
+    setReplying(m);
+    composer.current?.focus();
+  }
+
   function onKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Escape" && replying) return setReplying(null);
+    // arrow up in an empty box edits my last text message
+    if (e.key === "ArrowUp" && !text) {
+      const last = [...messages].reverse().find((m) => m.author_id === me && m.content);
+      if (last) (e.preventDefault(), setEditing(last.id));
+      return;
+    }
     if (e.key !== "Enter" || e.shiftKey) return;
     e.preventDefault();
     const t = text.trim();
     if (!t) return;
     setText("");
-    send(t);
+    send(t, null, takeReply());
   }
+
+  const byId = new Map(messages.map((m) => [m.id, m]));
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-card">
@@ -126,18 +169,40 @@ export function Chat({ me, target, focused, onSeen }: {
         {messages.length === 0 && <p className="px-4 text-sm text-dim">Nenhuma mensagem ainda. Diga oi!</p>}
         {messages.map((m, i) => {
           const prev = messages[i - 1];
-          const grouped = prev && prev.author_id === m.author_id && +new Date(m.created_at) - +new Date(prev.created_at) < GROUP_MS;
-          return <Row key={m.id} m={m} grouped={!!grouped} mine={m.author_id === me} />;
+          const grouped = prev && !m.reply_to && prev.author_id === m.author_id && +new Date(m.created_at) - +new Date(prev.created_at) < GROUP_MS;
+          return (
+            <Row
+              key={m.id}
+              m={m}
+              parent={m.reply_to ? byId.get(m.reply_to) : undefined}
+              grouped={!!grouped}
+              mine={m.author_id === me}
+              editing={editing === m.id}
+              onReply={() => startReply(m)}
+              onEdit={() => setEditing(m.id)}
+              onEditDone={(content) => (content === null ? setEditing(null) : saveEdit(m, content))}
+            />
+          );
         })}
       </div>
       <div className="px-4 pb-5">
         {err && <p className="pb-1 text-sm text-danger">{err}</p>}
-        <div className="flex items-start gap-2 rounded-lg bg-raised px-3 py-2.5">
+        {replying && (
+          <div className="flex items-center gap-1 rounded-t-lg bg-raised/60 px-3 py-1.5 text-sm text-dim">
+            Respondendo a <Name id={replying.author_id} className="font-medium text-fg" />
+            <span className="flex-1" />
+            <button title="Cancelar resposta" className="hover:text-fg" onClick={() => setReplying(null)}>
+              <X className="size-4" />
+            </button>
+          </div>
+        )}
+        <div className={`flex items-start gap-2 bg-raised px-3 py-2.5 ${replying ? "rounded-b-lg" : "rounded-lg"}`}>
           <label title="Enviar arquivo" className="cursor-pointer pt-0.5 text-dim hover:text-fg">
             {busy ? <Loader2 className="size-5 animate-spin" /> : <PlusCircle className="size-5" />}
             <input type="file" multiple hidden onChange={(e) => e.target.files && attach(e.target.files).then(() => (e.target.value = ""))} />
           </label>
           <textarea
+            ref={composer}
             rows={1}
             className="max-h-48 flex-1 resize-none bg-transparent text-[15px] outline-none placeholder:text-dim [field-sizing:content]"
             placeholder={`Conversar em ${target.kind === "channel" ? "#" : "@"}${target.name}`}
@@ -157,45 +222,137 @@ export function Chat({ me, target, focused, onSeen }: {
   );
 }
 
-function Row({ m, grouped, mine }: { m: Message; grouped: boolean; mine: boolean }) {
+function Row({ m, parent, grouped, mine, editing, onReply, onEdit, onEditDone }: {
+  m: Message;
+  parent: Message | undefined;
+  grouped: boolean;
+  mine: boolean;
+  editing: boolean;
+  onReply: () => void;
+  onEdit: () => void;
+  /** new text, or null when cancelled */
+  onEditDone: (content: string | null) => void;
+}) {
   const author = useProfile(m.author_id);
   const card = useProfileCard();
   const time = new Date(m.created_at);
+  const tool = "rounded p-1 text-dim hover:bg-raised hover:text-fg";
   return (
-    <div className={`group relative flex gap-4 px-4 hover:bg-raised/40 ${grouped ? "py-0.5" : "mt-3 py-0.5"}`}>
-      <div className="w-10 shrink-0">
-        {grouped ? (
-          <span className="invisible pt-1 text-[11px] text-dim group-hover:visible">
-            {time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-          </span>
-        ) : (
-          <button className="rounded-full" onClick={() => card.show(m.author_id)}>
-            <Avatar id={m.author_id} />
-          </button>
-        )}
-      </div>
-      <div className="min-w-0 flex-1">
-        {!grouped && (
-          <div className="flex items-baseline gap-2">
-            <button className="font-medium hover:underline" onClick={() => card.show(m.author_id)}>
-              {author?.username ?? "…"}
+    <div id={`msg-${m.id}`} className={`group relative px-4 hover:bg-raised/40 ${grouped ? "py-0.5" : "mt-3 py-0.5"}`}>
+      {m.reply_to && <Quote id={m.reply_to} loaded={parent} />}
+      <div className="flex gap-4">
+        <div className="w-10 shrink-0">
+          {grouped ? (
+            <span className="invisible pt-1 text-[11px] text-dim group-hover:visible">
+              {time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          ) : (
+            <button className="rounded-full" onClick={() => card.show(m.author_id)}>
+              <Avatar id={m.author_id} />
             </button>
-            <span className="text-xs text-dim">{time.toLocaleString([], { dateStyle: "short", timeStyle: "short" })}</span>
-          </div>
-        )}
-        {m.content && <p className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">{linkify(m.content)}</p>}
-        {m.attachment_url && <Attachment path={m.attachment_url} />}
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          {!grouped && (
+            <div className="flex items-baseline gap-2">
+              <button className="font-medium hover:underline" onClick={() => card.show(m.author_id)}>
+                {author?.username ?? "…"}
+              </button>
+              <span className="text-xs text-dim">{time.toLocaleString([], { dateStyle: "short", timeStyle: "short" })}</span>
+            </div>
+          )}
+          {editing ? (
+            <EditBox initial={m.content} onDone={onEditDone} />
+          ) : (
+            m.content && (
+              <p className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">
+                {linkify(m.content)}
+                {m.edited_at && (
+                  <span className="ml-1 text-[11px] text-dim" title={new Date(m.edited_at).toLocaleString()}>
+                    (editado)
+                  </span>
+                )}
+              </p>
+            )
+          )}
+          {m.attachment_url && <Attachment path={m.attachment_url} />}
+        </div>
       </div>
-      {mine && (
-        <button
-          title="Apagar"
-          className="absolute top-0 right-4 hidden rounded border border-line bg-card p-1 text-dim hover:text-danger group-hover:block"
-          onClick={() => supabase.from("messages").delete().eq("id", m.id)}
-        >
-          <Trash2 className="size-4" />
-        </button>
+      {!editing && (
+        <div className="absolute -top-3 right-4 hidden gap-0.5 rounded border border-line bg-card p-0.5 shadow group-hover:flex">
+          <button title="Responder" className={tool} onClick={onReply}>
+            <Reply className="size-4" />
+          </button>
+          {mine && m.content && (
+            <button title="Editar" className={tool} onClick={onEdit}>
+              <Pencil className="size-4" />
+            </button>
+          )}
+          {mine && (
+            <button title="Apagar" className={`${tool} hover:text-danger`} onClick={() => supabase.from("messages").delete().eq("id", m.id)}>
+              <Trash2 className="size-4" />
+            </button>
+          )}
+        </div>
       )}
     </div>
+  );
+}
+
+function EditBox({ initial, onDone }: { initial: string; onDone: (content: string | null) => void }) {
+  const [value, setValue] = useState(initial);
+  return (
+    <div className="py-1">
+      <textarea
+        className="max-h-60 w-full resize-none rounded-md bg-raised px-3 py-2 text-[15px] outline-none [field-sizing:content]"
+        value={value}
+        maxLength={4000}
+        autoFocus
+        onFocus={(e) => e.currentTarget.setSelectionRange(value.length, value.length)}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onDone(null);
+          else if (e.key === "Enter" && !e.shiftKey) (e.preventDefault(), onDone(value.trim()));
+        }}
+      />
+      <div className="text-[11px] text-dim">Esc para cancelar · Enter para salvar</div>
+    </div>
+  );
+}
+
+// replied-to messages that are not in the loaded page are fetched once (RLS still applies)
+const parents = new Map<number, Promise<Message | null>>();
+
+function Quote({ id, loaded }: { id: number; loaded: Message | undefined }) {
+  const [fetched, setFetched] = useState<Message | null | undefined>(undefined); // undefined: loading, null: gone or not visible
+  useEffect(() => {
+    if (loaded) return;
+    if (!parents.has(id)) parents.set(id, Promise.resolve(supabase.from("messages").select(COLUMNS).eq("id", id).maybeSingle()).then(({ data }) => data));
+    let live = true;
+    parents.get(id)!.then((m) => live && setFetched(m));
+    return () => void (live = false);
+  }, [id, loaded]);
+  const m = loaded ?? fetched;
+
+  function jump() {
+    const el = document.getElementById(`msg-${id}`);
+    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+    el?.animate([{ backgroundColor: "rgb(124 92 255 / 0.25)" }, { backgroundColor: "transparent" }], { duration: 1500 });
+  }
+
+  return (
+    <button className="mb-0.5 ml-5 flex max-w-full items-center gap-1.5 text-left text-[13px] text-dim hover:text-fg" onClick={jump}>
+      <CornerUpLeft className="size-3.5 shrink-0" />
+      {m ? (
+        <>
+          <Avatar id={m.author_id} size={16} />
+          <Name id={m.author_id} className="shrink-0 font-medium" />
+          <span className="truncate">{m.content || "Enviou um arquivo"}</span>
+        </>
+      ) : (
+        <span className="italic">{fetched === null ? "Mensagem indisponível" : "…"}</span>
+      )}
+    </button>
   );
 }
 

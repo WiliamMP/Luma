@@ -17,6 +17,8 @@ export type Message = {
   content: string;
   attachment_url: string | null;
   created_at: string;
+  edited_at: string | null;
+  reply_to: number | null;
 };
 /** what the chat pane shows: a server text channel or a DM thread */
 export type Target = { kind: "channel" | "dm"; id: string; name: string };
