@@ -175,6 +175,7 @@ function Main({ me }: { me: string }) {
               unread={unread}
               presence={presence}
               voiceRoom={voice?.id ?? null}
+              speaking={voiceState.speaking}
               onVoice={(c) => setVoice({ id: c.id, name: `${c.name} / ${server.name}` })}
               onGone={() => (loadServers(), pick("home"))}
               onRenamed={loadServers}

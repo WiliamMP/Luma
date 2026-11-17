@@ -36,6 +36,19 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
   const screenRef = useRef<MediaStream | null>(null);
   /** peer id -> their video stream (frames only arrive while they share) */
   const [remote, setRemote] = useState<Map<string, MediaStream>>(new Map());
+  /** who is talking right now (me included), from the audio level of each stream */
+  const [speaking, setSpeaking] = useState<Set<string>>(new Set());
+  const meters = useRef(new Map<string, { an: AnalyserNode; loudAt: number }>());
+  const audioCtx = useRef<AudioContext | null>(null);
+
+  function meter(id: string, s: MediaStream) {
+    const ctx = (audioCtx.current ??= new AudioContext());
+    ctx.resume().catch(() => {});
+    const an = ctx.createAnalyser();
+    an.fftSize = 512;
+    ctx.createMediaStreamSource(s).connect(an);
+    meters.current.set(id, { an, loudAt: 0 });
+  }
   const ice = useRef<RTCConfiguration>({ iceServers: STUN });
   const deaf = useRef(deafened);
   deaf.current = deafened;
@@ -64,6 +77,7 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
       if (e.track.kind === "video") return setRemote((m) => new Map(m).set(id, new MediaStream([e.track])));
       audio.srcObject = e.streams[0] ?? new MediaStream([e.track]);
       audio.play().catch(() => {});
+      meter(id, audio.srcObject as MediaStream);
     };
     pc.onicecandidate = (e) => e.candidate && send({ to: id, candidate: e.candidate.toJSON() });
     pc.onconnectionstatechange = () => {
@@ -79,6 +93,7 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
     p.pc.close();
     p.audio.srcObject = null;
     conns.current.delete(id);
+    meters.current.delete(id);
     setRemote((m) => {
       if (!m.has(id)) return m;
       const next = new Map(m);
@@ -116,6 +131,7 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
         if (cancelled) return s.getTracks().forEach((t) => t.stop());
         stream.current = s;
         ice.current = { iceServers: servers };
+        meter(me, s);
         chan.current = supabase
           .channel(`voice:${room}`, { config: { private: true } })
           .on("broadcast", { event: "signal" }, ({ payload }) => onSignal(payload as Signal).catch(console.error))
@@ -131,6 +147,10 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
       setReady(false);
       [...conns.current.keys()].forEach(drop);
       stopShare();
+      meters.current.clear();
+      audioCtx.current?.close().catch(() => {});
+      audioCtx.current = null;
+      setSpeaking(new Set());
       stream.current?.getTracks().forEach((t) => t.stop());
       stream.current = null;
       if (chan.current) supabase.removeChannel(chan.current);
@@ -153,6 +173,25 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
         .catch(console.error);
     }
   }, [ready, key]);
+
+  // level meter: loud within the last 300 ms counts as speaking, so the ring does not flicker between words
+  useEffect(() => {
+    if (!room) return;
+    const buf = new Uint8Array(512);
+    const tick = setInterval(() => {
+      const now = Date.now();
+      const next = new Set<string>();
+      meters.current.forEach((m, id) => {
+        m.an.getByteTimeDomainData(buf);
+        let sum = 0;
+        for (const v of buf) sum += (v - 128) ** 2;
+        if (Math.sqrt(sum / buf.length) > 4) m.loudAt = now; // ponytail: fixed threshold, add a sensitivity setting if it misfires
+        if (now - m.loudAt < 300) next.add(id);
+      });
+      setSpeaking((prev) => (prev.size === next.size && [...next].every((id) => prev.has(id)) ? prev : next));
+    }, 100);
+    return () => clearInterval(tick);
+  }, [room]);
 
   useEffect(() => {
     stream.current?.getAudioTracks().forEach((t) => (t.enabled = !muted));
@@ -185,5 +224,5 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
     conns.current.forEach(attachScreen);
   }
 
-  return { ready, error, screen, remote, share, stopShare };
+  return { ready, error, screen, remote, speaking, share, stopShare };
 }

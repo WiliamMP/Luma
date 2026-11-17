@@ -15,7 +15,7 @@ const row = (active: boolean) =>
 
 // ───────── server: channels ─────────
 
-export function ServerSidebar({ server, me, target, onTarget, unread, presence, voiceRoom, onVoice, onGone, onRenamed }: {
+export function ServerSidebar({ server, me, target, onTarget, unread, presence, voiceRoom, speaking, onVoice, onGone, onRenamed }: {
   server: Server;
   me: string;
   target: Target | null;
@@ -23,6 +23,8 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
   unread: Unread;
   presence: Presence;
   voiceRoom: string | null;
+  /** people talking in my voice room */
+  speaking: Set<string>;
   onVoice: (c: Channel) => void;
   onGone: () => void;
   onRenamed: () => void;
@@ -114,7 +116,9 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
                 {kind === "voice" &&
                   inVoice(c.id).map((id) => (
                     <div key={id} className="flex cursor-pointer items-center gap-2 py-1 pl-8 text-sm text-dim hover:text-fg" onClick={() => card.show(id)}>
-                      <Avatar id={id} size={22} />
+                      <div className={cn("rounded-full ring-2 transition-shadow", speaking.has(id) ? "ring-online" : "ring-transparent")}>
+                        <Avatar id={id} size={22} />
+                      </div>
                       <Name id={id} className="truncate" />
                       {presence.get(id)?.screen && <span className="rounded bg-danger px-1 text-[10px] font-bold text-white">AO VIVO</span>}
                     </div>
