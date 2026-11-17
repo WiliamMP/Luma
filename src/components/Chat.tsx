@@ -564,12 +564,16 @@ function Quote({ id, loaded }: { id: number; loaded: Message | undefined }) {
 /** `path` is a storage path (private bucket) or, for old messages, a full public URL */
 function Attachment({ path }: { path: string }) {
   const url = useFileUrl(path);
+  const [viewing, setViewing] = useState(false);
   const name = decodeURIComponent(path.split("/").pop() ?? "").replace(/^[0-9a-f-]{36}-/, "");
   // signed URLs expire after an hour: ask for a fresh one when opening
   const show = () => fileUrl(path).then((u) => u && open(u));
   return isImage(path) ? (
     url ? (
-      <img src={url} alt={name} className="mt-1 max-h-80 max-w-md cursor-pointer rounded-lg" onClick={show} />
+      <>
+        <img src={url} alt={name} className="mt-1 max-h-80 max-w-md cursor-zoom-in rounded-lg" onClick={() => setViewing(true)} />
+        {viewing && <Lightbox url={url} name={name} onBrowser={show} onClose={() => setViewing(false)} />}
+      </>
     ) : (
       <div className="mt-1 h-40 w-64 animate-pulse rounded-lg bg-raised" />
     )
@@ -577,5 +581,30 @@ function Attachment({ path }: { path: string }) {
     <button className="mt-1 flex items-center gap-2 rounded-lg border border-line bg-raised px-3 py-2 text-sm text-primary hover:underline" onClick={show}>
       <FileText className="size-5" /> {name}
     </button>
+  );
+}
+
+/** full-window image viewer; Esc or a click outside the image closes it */
+function Lightbox({ url, name, onBrowser, onClose }: { url: string; name: string; onBrowser: () => void; onClose: () => void }) {
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-black/85 backdrop-blur-sm" onClick={onClose}>
+      <div className="flex items-center gap-3 px-4 py-2 text-sm text-white/80" onClick={(e) => e.stopPropagation()}>
+        <span className="flex-1 truncate">{name}</span>
+        <button className="hover:text-white hover:underline" onClick={onBrowser}>
+          Abrir no navegador
+        </button>
+        <button title="Fechar" className="hover:text-white" onClick={onClose}>
+          <X className="size-5" />
+        </button>
+      </div>
+      <div className="grid min-h-0 flex-1 place-items-center p-6">
+        <img src={url} alt={name} className="max-h-full max-w-full rounded object-contain shadow-2xl" onClick={(e) => e.stopPropagation()} />
+      </div>
+    </div>
   );
 }
