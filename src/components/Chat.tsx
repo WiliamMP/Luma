@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { AtSign, CornerUpLeft, FileText, Hash, Loader2, Pencil, PlusCircle, Reply, Trash2, X } from "lucide-react";
 import { errorText, fileUrl, isImage, open, supabase, upload, useFileUrl, useProfile, type Message, type Target } from "@/lib";
 import { Avatar, Name } from "./ui";
@@ -22,6 +23,10 @@ export function Chat({ me, target, focused, onSeen }: {
   const [replying, setReplying] = useState<Message | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
+  /** user id -> time their "typing" expires */
+  const [typing, setTyping] = useState<Map<string, number>>(new Map());
+  const typingChan = useRef<RealtimeChannel | null>(null);
+  const lastTyped = useRef(0);
   const list = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
   const loadingOlder = useRef(false);
@@ -50,9 +55,10 @@ export function Chat({ me, target, focused, onSeen }: {
       });
     const sub = supabase
       .channel(`messages:${target.id}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `${col}=eq.${target.id}` }, ({ new: m }) =>
-        setMessages((prev) => (prev.some((p) => p.id === m.id) ? prev : [...prev, m as Message])),
-      )
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `${col}=eq.${target.id}` }, ({ new: m }) => {
+        setMessages((prev) => (prev.some((p) => p.id === m.id) ? prev : [...prev, m as Message]));
+        setTyping((t) => (t.has(m.author_id) ? new Map([...t].filter(([id]) => id !== m.author_id)) : t));
+      })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages", filter: `${col}=eq.${target.id}` }, ({ new: m }) =>
         replace(m as Message),
       )
@@ -65,6 +71,35 @@ export function Chat({ me, target, focused, onSeen }: {
       void supabase.removeChannel(sub);
     };
   }, [target.id]);
+
+  // "X está digitando…": private broadcast per channel/DM (supabase/005_features.sql), each ping lasts 4 s
+  useEffect(() => {
+    const ch = supabase
+      .channel(`typing:${target.id}`, { config: { private: true } })
+      .on("broadcast", { event: "typing" }, ({ payload }) => {
+        const id = (payload as { user: string }).user;
+        if (id !== me) setTyping((t) => new Map(t).set(id, Date.now() + 4000));
+      })
+      .subscribe();
+    typingChan.current = ch;
+    const sweep = setInterval(() => {
+      const now = Date.now();
+      setTyping((t) => ([...t.values()].some((until) => until <= now) ? new Map([...t].filter(([, until]) => until > now)) : t));
+    }, 1000);
+    return () => {
+      clearInterval(sweep);
+      supabase.removeChannel(ch);
+      typingChan.current = null;
+      setTyping(new Map());
+    };
+  }, [target.id]);
+
+  function onType(value: string) {
+    setText(value);
+    if (!value || Date.now() - lastTyped.current < 2500) return;
+    lastTyped.current = Date.now();
+    typingChan.current?.send({ type: "broadcast", event: "typing", payload: { user: me } });
+  }
 
   async function loadOlder() {
     const oldest = messages[0]?.id;
@@ -201,7 +236,7 @@ export function Chat({ me, target, focused, onSeen }: {
           );
         })}
       </div>
-      <div className="px-4 pb-5">
+      <div className="px-4 pb-1">
         {err && <p className="pb-1 text-sm text-danger">{err}</p>}
         {replying && (
           <div className="flex items-center gap-1 rounded-t-lg bg-raised/60 px-3 py-1.5 text-sm text-dim">
@@ -224,7 +259,7 @@ export function Chat({ me, target, focused, onSeen }: {
             placeholder={`Conversar em ${target.kind === "channel" ? "#" : "@"}${target.name}`}
             value={text}
             maxLength={4000}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => onType(e.target.value)}
             onKeyDown={onKey}
             onPaste={(e) => {
               const files = [...e.clipboardData.files];
@@ -233,9 +268,28 @@ export function Chat({ me, target, focused, onSeen }: {
             autoFocus
           />
         </div>
+        <Typing ids={[...typing.keys()]} />
       </div>
     </div>
   );
+}
+
+function Typing({ ids }: { ids: string[] }) {
+  const names =
+    ids.length === 0 ? null : ids.length > 3 ? (
+      "Várias pessoas estão digitando…"
+    ) : (
+      <>
+        {ids.map((id, i) => (
+          <span key={id}>
+            {i > 0 && (i === ids.length - 1 ? " e " : ", ")}
+            <Name id={id} className="font-semibold text-fg" />
+          </span>
+        ))}
+        {ids.length === 1 ? " está digitando…" : " estão digitando…"}
+      </>
+    );
+  return <div className="h-4 truncate px-1 pt-0.5 text-xs text-dim">{names}</div>;
 }
 
 function Row({ m, parent, grouped, mine, editing, onReply, onEdit, onEditDone }: {
