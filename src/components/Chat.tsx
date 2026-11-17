@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { AtSign, CornerUpLeft, FileText, Hash, Loader2, Pencil, PlusCircle, Reply, SmilePlus, Trash2, X } from "lucide-react";
+import { AtSign, CornerUpLeft, FileText, Hash, Loader2, Pencil, PlusCircle, Reply, Search, SmilePlus, Trash2, X } from "lucide-react";
 import { errorText, fileUrl, isImage, open, openChannel, supabase, upload, useFileUrl, useProfile, type Message, type Target } from "@/lib";
 import { Avatar, Name } from "./ui";
 import { format, mentions } from "@/format";
@@ -9,6 +9,19 @@ import { useProfileCard } from "./Profile";
 const GROUP_MS = 5 * 60 * 1000;
 const PAGE = 100;
 const COLUMNS = "id, author_id, content, attachment_url, created_at, edited_at, reply_to, reactions";
+/** a search result further back than this many messages is listed but not opened in the chat */
+const GAP = 1000;
+
+/** user text inside a LIKE pattern: _ and % are wildcards there */
+const likeEscape = (s: string) => s.replace(/[\\%_]/g, "\\$&");
+
+/** scroll to a message that is on screen and flash it */
+function flash(id: number) {
+  const el = document.getElementById(`msg-${id}`);
+  el?.scrollIntoView({ block: "center", behavior: "smooth" });
+  el?.animate([{ backgroundColor: "rgb(124 92 255 / 0.25)" }, { backgroundColor: "transparent" }], { duration: 1500 });
+}
+
 const QUICK_EMOJI = ["👍", "❤️", "😂", "😮", "😢", "🔥", "🎉", "👀"];
 
 export function Chat({ me, target, owner, focused, onSeen }: {
@@ -31,6 +44,9 @@ export function Chat({ me, target, owner, focused, onSeen }: {
   /** last message id I had read when this chat opened: "Novas mensagens" goes after it */
   const [readMark, setReadMark] = useState(0);
   const jumpToNew = useRef(false);
+  const [search, setSearch] = useState<{ q: string; results: Message[] } | null>(null);
+  /** message to flash once it has been rendered (after loading it for a search result) */
+  const pendingFlash = useRef<number | null>(null);
   const [replying, setReplying] = useState<Message | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -118,7 +134,7 @@ export function Chat({ me, target, owner, focused, onSeen }: {
     supabase
       .from("profiles")
       .select("username")
-      .ilike("username", `${m[1].replace(/[\\%_]/g, "\\$&")}%`) // _ and % are wildcards in LIKE
+      .ilike("username", `${likeEscape(m[1])}%`)
       .order("username")
       .limit(6)
       .then(({ data }) => {
@@ -144,6 +160,32 @@ export function Chat({ me, target, owner, focused, onSeen }: {
     if (!value || Date.now() - lastTyped.current < 2500) return;
     lastTyped.current = Date.now();
     typingChan.current?.send({ type: "broadcast", event: "typing", payload: { user: me } });
+  }
+
+  async function runSearch(q: string) {
+    q = q.trim();
+    if (!q) return setSearch(null);
+    const { data, error } = await supabase
+      .from("messages")
+      .select(COLUMNS)
+      .eq(col, target.id)
+      .ilike("content", `%${likeEscape(q)}%`)
+      .order("id", { ascending: false })
+      .limit(50);
+    if (error) return setErr(errorText(error));
+    setSearch({ q, results: data ?? [] });
+  }
+
+  // open a search result: flash it if loaded, else load everything between it and the oldest loaded message
+  async function goTo(id: number) {
+    setSearch(null);
+    if (messages.some((m) => m.id === id)) return flash(id);
+    const oldest = messages[0]?.id ?? Number.MAX_SAFE_INTEGER;
+    const { data, error } = await supabase.from("messages").select(COLUMNS).eq(col, target.id).gte("id", id).lt("id", oldest).order("id").limit(GAP);
+    if (error) return setErr(errorText(error));
+    if (!data?.length || data.length === GAP) return setErr("Essa mensagem é antiga demais para abrir aqui.");
+    pendingFlash.current = id;
+    setMessages((prev) => [...data, ...prev]);
   }
 
   async function loadOlder() {
@@ -172,6 +214,10 @@ export function Chat({ me, target, owner, focused, onSeen }: {
     if (!el) return;
     el.scrollTop = anchor.current === null ? el.scrollHeight : el.scrollHeight - anchor.current;
     anchor.current = null;
+    if (pendingFlash.current !== null) {
+      flash(pendingFlash.current);
+      pendingFlash.current = null;
+    }
     // first load with unread messages: start at "Novas mensagens" instead of the bottom
     if (jumpToNew.current) {
       jumpToNew.current = false;
@@ -283,7 +329,41 @@ export function Chat({ me, target, owner, focused, onSeen }: {
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4 font-semibold">
         {target.kind === "channel" ? <Hash className="size-5 text-dim" /> : <AtSign className="size-5 text-dim" />}
         {target.name}
+        <span className="flex-1" />
+        <form
+          className="relative font-normal"
+          onSubmit={(e) => (e.preventDefault(), runSearch(String(new FormData(e.currentTarget).get("q") ?? "")))}
+        >
+          <Search className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-dim" />
+          <input name="q" placeholder="Buscar" className="w-44 rounded-md bg-bg py-1 pr-2 pl-8 text-sm outline-none transition-[width] focus:w-64" />
+        </form>
       </header>
+      {search && (
+        <div className="absolute top-12 right-2 z-20 flex max-h-[60%] w-[420px] flex-col rounded-lg border border-line bg-bg shadow-2xl">
+          <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-sm">
+            <span className="flex-1 truncate text-dim">
+              {search.results.length === 0 ? "Nada encontrado" : `${search.results.length === 50 ? "50+" : search.results.length} resultado(s)`} para “{search.q}”
+            </span>
+            <button title="Fechar" className="text-dim hover:text-fg" onClick={() => setSearch(null)}>
+              <X className="size-4" />
+            </button>
+          </div>
+          <div className="overflow-y-auto py-1">
+            {search.results.map((m) => (
+              <button key={m.id} className="flex w-full gap-3 px-3 py-2 text-left hover:bg-raised" onClick={() => goTo(m.id)}>
+                <Avatar id={m.author_id} size={28} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline gap-2 text-sm">
+                    <Name id={m.author_id} className="font-medium" />
+                    <span className="text-xs text-dim">{new Date(m.created_at).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}</span>
+                  </div>
+                  <div className="line-clamp-3 text-sm break-words whitespace-pre-wrap">{format(m.content, myName)}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div ref={list} className="selectable flex-1 overflow-y-auto py-4" onScroll={(e) => e.currentTarget.scrollTop < 300 && loadOlder()}>
         {hasMore && <Loader2 className="mx-auto mb-2 size-5 animate-spin text-dim" />}
         {messages.length === 0 && <p className="px-4 text-sm text-dim">Nenhuma mensagem ainda. Diga oi!</p>}
@@ -539,11 +619,7 @@ function Quote({ id, loaded }: { id: number; loaded: Message | undefined }) {
   }, [id, loaded]);
   const m = loaded ?? fetched;
 
-  function jump() {
-    const el = document.getElementById(`msg-${id}`);
-    el?.scrollIntoView({ block: "center", behavior: "smooth" });
-    el?.animate([{ backgroundColor: "rgb(124 92 255 / 0.25)" }, { backgroundColor: "transparent" }], { duration: 1500 });
-  }
+  const jump = () => flash(id);
 
   return (
     <button className="mb-0.5 ml-5 flex max-w-full items-center gap-1.5 text-left text-[13px] text-dim hover:text-fg" onClick={jump}>
