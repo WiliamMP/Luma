@@ -286,7 +286,7 @@ export function UserPanel({ me, voiceName, voiceState, muted, deafened, onMute, 
         <div className="flex items-center justify-between border-b border-line px-3 py-2">
           <div className="min-w-0">
             <div className={cn("text-sm font-semibold", voiceState.error ? "text-danger" : voiceState.ready ? "text-online" : "text-dim")}>
-              {voiceState.error ? "Erro no microfone" : voiceState.ready ? "Voz conectada" : "Conectando…"}
+              {voiceState.error ? "Erro na voz" : voiceState.ready ? "Voz conectada" : "Conectando…"}
             </div>
             <div className="truncate text-xs text-dim">{voiceState.error ?? voiceName}</div>
           </div>

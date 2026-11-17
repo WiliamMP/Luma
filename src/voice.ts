@@ -21,7 +21,7 @@ type Peer = { pc: RTCPeerConnection; audio: HTMLAudioElement; queue: RTCIceCandi
  * Supabase broadcast channel. `peers` comes from presence (who is in this room right now).
  * Only the lower user id sends the offer for a pair, so two peers never offer at once.
  * ponytail: mesh = every peer uploads to every other, fine for ~8 people. An SFU (LiveKit) beyond that.
- * ponytail: the broadcast channel is public to logged-in clients; use Realtime private channels to lock signalling down.
+ * The channel is private: Realtime only lets members of the voice channel's server in (supabase/004_private_voice.sql).
  */
 export function useVoice(me: string, room: string | null, peers: string[], muted: boolean, deafened: boolean) {
   const [ready, setReady] = useState(false);
@@ -92,9 +92,13 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
         stream.current = s;
         ice.current = { iceServers: servers };
         chan.current = supabase
-          .channel(`voice:${room}`)
+          .channel(`voice:${room}`, { config: { private: true } })
           .on("broadcast", { event: "signal" }, ({ payload }) => onSignal(payload as Signal).catch(console.error))
-          .subscribe((status) => status === "SUBSCRIBED" && !cancelled && setReady(true));
+          .subscribe((status) => {
+            if (cancelled) return;
+            if (status === "SUBSCRIBED") setReady(true);
+            else if (status === "CHANNEL_ERROR") setError("Sem permissão para entrar neste canal de voz.");
+          });
       })
       .catch((e) => setError(errorText(e)));
     return () => {
