@@ -1,6 +1,6 @@
 # Luma
 
-Desktop chat app (Tauri + React + Supabase): servers, text and voice channels, screen sharing, direct messages, replies, edits and reactions, image/file uploads, profiles with status and bio, online status, typing indicator, auto-update.
+Desktop chat app (Tauri + React + Supabase): servers (with icons, kick, rename), text and voice channels, screen sharing, per-person volume, direct messages, replies, edits, reactions, pins, @mentions, Markdown-style formatting, search, image/file uploads, profiles with status and bio, Online/Ausente/Não perturbe, typing indicator, auto-update.
 
 ## Setup (once)
 
@@ -46,12 +46,14 @@ The Supabase URL and key are baked in at build time, so rebuild after changing `
 - Live updates: Supabase Realtime `postgres_changes` for messages (new, edited, deleted, reactions), channels, members, DMs and profiles.
 - Typing indicator: a private Realtime broadcast topic per channel/DM (`typing:<id>`).
 - Files: private `uploads` bucket; the database stores paths and the app shows them through signed URLs (`*_private_uploads.sql`).
-- Online status and "who is in which voice channel": one Realtime presence channel (`online`).
+- Online status (Online/Ausente/Não perturbe), "who is in which voice channel" and who is sharing a screen: one Realtime presence channel (`online`).
 - Unread: a `reads` table keeps the last message id each user has seen per channel/DM; `unread_counts()` counts the rest. Windows notifications come from `tauri-plugin-notification`.
 - Voice and screen share: WebRTC peer-to-peer mesh (`src/voice.ts`), signalling over a private Realtime broadcast channel per voice room (only members of the server can join it). STUN, plus TURN relays from Cloudflare when the `turn` edge function is deployed (see below).
 
 ## Known limits
 
 - Voice is a mesh: fine for small rooms (~8 people).
-- Server mute and the chosen microphone are saved per device, not per account.
-- Renaming a server reaches other members on their next load (servers are not in Realtime).
+- Server mute, status, microphone and per-person volumes are saved per device, not per account.
+- Renaming a server or changing its icon reaches other members on their next load (servers are not in Realtime).
+- Search lists up to 50 matches; a match more than 1000 messages back is listed but not opened in the chat.
+- Deleting an account leaves its uploaded files in storage.
