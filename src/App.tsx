@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { check, type Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import type { RealtimeChannel, Session } from "@supabase/supabase-js";
-import { configured, supabase, type Server, type Target } from "./lib";
+import { configured, errorText, supabase, type Server, type Target } from "./lib";
 import { useVoice } from "./voice";
 import { useInbox } from "./unread";
 import { Auth } from "./components/Auth";
@@ -26,9 +28,49 @@ export default function App() {
         <span className="pointer-events-none flex-1">Luma</span>
         <WindowControls />
       </div>
+      <UpdateBar />
       <div className="min-h-0 flex-1">
         {!configured ? <Setup /> : session === undefined ? null : session ? <Main me={session.user.id} /> : <Auth />}
       </div>
+    </div>
+  );
+}
+
+/** checks GitHub Releases once on startup; installers are signed, the app only accepts our key (pubkey in tauri.conf.json) */
+function UpdateBar() {
+  const [update, setUpdate] = useState<Update | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    check().then(setUpdate, () => {}); // no internet / dev build: stay quiet
+  }, []);
+
+  async function install(u: Update) {
+    let total = 0;
+    let done = 0;
+    try {
+      await u.downloadAndInstall((e) => {
+        if (e.event === "Started") total = e.data.contentLength ?? 0;
+        else if (e.event === "Progress") {
+          done += e.data.chunkLength;
+          setStatus(total ? `Baixando... ${Math.round((done / total) * 100)}%` : "Baixando...");
+        } else setStatus("Instalando...");
+      });
+      await relaunch();
+    } catch (e) {
+      setStatus(`Não foi possível atualizar: ${errorText(e)}`);
+    }
+  }
+
+  if (!update) return null;
+  return (
+    <div className="flex shrink-0 items-center gap-3 bg-primary px-3 py-1.5 text-sm text-white">
+      <span className="flex-1">{status ?? `Nova versão ${update.version} disponível.`}</span>
+      {!status?.startsWith("Baix") && status !== "Instalando..." && (
+        <button className="rounded bg-white/20 px-3 py-0.5 font-medium hover:bg-white/30" onClick={() => install(update)}>
+          Atualizar
+        </button>
+      )}
     </div>
   );
 }

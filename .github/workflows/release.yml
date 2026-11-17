@@ -35,9 +35,14 @@ jobs:
           # baked into the app by Vite at build time (the anon key is public by design)
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          # private key from `tauri signer generate` signs the installer for the auto-updater
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Luma ${{ github.ref_name }}
-          releaseBody: Instale pelo arquivo -setup.exe ou com `will install Luma`.
+          releaseBody: Instale pelo arquivo -setup.exe ou com `will install Luma`. Quem já tem o Luma recebe esta versão pelo aviso de atualização.
           releaseDraft: false
           prerelease: false
+          # latest.json points the updater at the NSIS setup
+          updaterJsonPreferNsis: true

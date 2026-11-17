@@ -1,6 +1,6 @@
 [package]
 name = "luma"
-version = "0.2.0"
+version = "0.3.0"
 description = "Chat with servers, channels, DMs and voice"
 authors = ["Wiliam Patricio"]
 edition = "2021"
@@ -14,9 +14,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+serde_json = "1"
 tauri = { version = "2", features = [] }
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"
+tauri-plugin-process = "2"
 
 [profile.release]
 codegen-units = 1
@@ -24,3 +26,6 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"

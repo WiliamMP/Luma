@@ -11,6 +11,8 @@
     "core:window:allow-start-dragging",
     "core:window:allow-request-user-attention",
     "opener:allow-open-url",
-    "notification:default"
+    "notification:default",
+    "updater:default",
+    "process:allow-restart"
   ]
 }
