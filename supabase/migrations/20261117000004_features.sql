@@ -1,7 +1,5 @@
 -- Profiles, message edits, replies, reactions, typing indicator, owner moderation.
--- Run after 004_private_voice.sql: Supabase > SQL Editor > paste > Run.
--- Run it BEFORE publishing the app version that uses it: that version selects the new columns and
--- shows nothing without them (older versions ignore the new columns).
+-- Applied automatically by .github/workflows/migrate.yml (supabase db push).
 
 -- ───────── profiles: status line and "about me", live updates ─────────
 

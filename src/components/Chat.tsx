@@ -76,7 +76,7 @@ export function Chat({ me, target, owner, focused, onSeen }: {
     };
   }, [target.id]);
 
-  // "X está digitando…": private broadcast per channel/DM (supabase/005_features.sql), each ping lasts 4 s
+  // "X está digitando…": private broadcast per channel/DM (supabase/migrations/*_features.sql), each ping lasts 4 s
   useEffect(() => {
     const ch = supabase
       .channel(`typing:${target.id}`, { config: { private: true } })

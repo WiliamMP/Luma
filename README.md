@@ -5,14 +5,18 @@ Desktop chat app (Tauri + React + Supabase): servers, text and voice channels, s
 ## Setup (once)
 
 1. Create a free project at [supabase.com](https://supabase.com).
-2. Supabase > **SQL Editor** > paste all of `supabase/schema.sql` > **Run**. Then the same, in order, with `supabase/002_unread.sql`, `003_private_uploads.sql`, `004_private_voice.sql` and `005_features.sql`.
+2. Database: GitHub repo > **Settings > Secrets and variables > Actions** > new secret `SUPABASE_DB_URL` = Supabase > **Connect** > **Session pooler** connection string, with the database password filled in. Then run the **Migrate database** workflow (Actions tab), which applies everything in `supabase/migrations`. Without GitHub: `npx supabase db push --remote="<that connection string>"`.
 3. Supabase > **Authentication > Sign In / Providers > Email**: turn off **Confirm email** (a desktop app has no page for the confirmation link to land on). Leave it on only if you set up a redirect.
 4. Supabase > **Authentication > Emails > Reset Password**: put the code in the message body, e.g. `Seu código do Luma: {{ .Token }}`. The app's "Esqueci minha senha" screen asks for that code (the default template only has a link, which has nowhere to land in a desktop app).
 5. Copy `.env.example` to `.env` and fill in the values from **Project Settings > API** (Project URL and the `anon` public key).
 
-## Updating an existing project
+## Database changes
 
-Run any new `supabase/00X_*.sql` file in the SQL Editor **before** pushing the version tag: the auto-updater delivers the release to everyone, and a version that expects new columns shows empty chats until the SQL has run. The exception is `003_private_uploads.sql`, which turns stored URLs into paths and should run right after people have the version that reads paths (v0.3.1+).
+Add a new file to `supabase/migrations` named `<YYYYMMDDHHMMSS>_<what>.sql` (later timestamp than the others; `npx supabase migration new <what>` creates it). Never edit a migration that already ran.
+
+`.github/workflows/migrate.yml` applies new migrations with `supabase db push`:
+- on every push to `master` that touches `supabase/migrations`;
+- before every release build (`release.yml` waits for it), so a published version never expects columns that do not exist yet.
 
 ## Voice through strict NAT (optional)
 
@@ -40,10 +44,10 @@ The Supabase URL and key are baked in at build time, so rebuild after changing `
 
 ## How it works
 
-- Data and permissions: Postgres tables with row level security (`supabase/schema.sql`). Members only see their servers, channels and messages; actions that need several writes (create server, join with invite, open DM) are SQL functions called with `supabase.rpc`.
+- Data and permissions: Postgres tables with row level security (`supabase/migrations`). Members only see their servers, channels and messages; actions that need several writes (create server, join with invite, open DM) are SQL functions called with `supabase.rpc`.
 - Live updates: Supabase Realtime `postgres_changes` for messages (new, edited, deleted, reactions), channels, members, DMs and profiles.
 - Typing indicator: a private Realtime broadcast topic per channel/DM (`typing:<id>`).
-- Files: private `uploads` bucket; the database stores paths and the app shows them through signed URLs (`003_private_uploads.sql`).
+- Files: private `uploads` bucket; the database stores paths and the app shows them through signed URLs (`*_private_uploads.sql`).
 - Online status and "who is in which voice channel": one Realtime presence channel (`online`).
 - Unread: a `reads` table keeps the last message id each user has seen per channel/DM; `unread_counts()` counts the rest. Windows notifications come from `tauri-plugin-notification`.
 - Voice and screen share: WebRTC peer-to-peer mesh (`src/voice.ts`), signalling over a private Realtime broadcast channel per voice room (only members of the server can join it). STUN, plus TURN relays from Cloudflare when the `turn` edge function is deployed (see below).

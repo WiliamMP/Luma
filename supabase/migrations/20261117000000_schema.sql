@@ -185,7 +185,7 @@ alter publication supabase_realtime add table public.messages, public.channels, 
 
 -- ───────── storage: avatars and chat attachments ─────────
 
--- created public here; 003_private_uploads.sql makes it private (signed URLs + read policy)
+-- created public here; the private_uploads migration makes it private (signed URLs + read policy)
 insert into storage.buckets (id, name, public, file_size_limit) values ('uploads', 'uploads', true, 26214400);
 
 create policy "upload to own folder" on storage.objects for insert to authenticated

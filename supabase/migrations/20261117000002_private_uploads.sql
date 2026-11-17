@@ -1,4 +1,4 @@
--- Private uploads. Run after 002_unread.sql: Supabase > SQL Editor > paste > Run.
+-- Private uploads.
 -- Update the app to v0.3.1+ BEFORE running this: older versions expect public URLs and show broken images afterwards.
 --
 -- The bucket stops being public. messages.attachment_url and profiles.avatar_url now hold the

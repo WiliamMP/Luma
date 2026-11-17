@@ -57,7 +57,7 @@ type Peer = { pc: RTCPeerConnection; audio: HTMLAudioElement; queue: RTCIceCandi
  * Screen share: the offer always carries an empty video transceiver, so starting/stopping a share
  * is just replaceTrack on it, no renegotiation. Who is sharing is announced in presence (App).
  * ponytail: mesh = every peer uploads to every other, fine for ~8 people. An SFU (LiveKit) beyond that.
- * The channel is private: Realtime only lets members of the voice channel's server in (supabase/004_private_voice.sql).
+ * The channel is private: Realtime only lets members of the voice channel's server in (supabase/migrations/*_private_voice.sql).
  */
 export function useVoice(me: string, room: string | null, peers: string[], muted: boolean, deafened: boolean) {
   // ready is per room: right after switching rooms, the old room's "ready" must not count for the new one

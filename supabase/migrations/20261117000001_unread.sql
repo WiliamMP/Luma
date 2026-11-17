@@ -1,4 +1,4 @@
--- Unread badges. Run after schema.sql: Supabase > SQL Editor > paste > Run.
+-- Unread badges.
 
 -- last message each user has seen, per channel or DM (target = channel id or dm id)
 create table public.reads (

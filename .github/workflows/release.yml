@@ -11,7 +11,13 @@ permissions:
   contents: write
 
 jobs:
+  # new SQL goes in before the installer that depends on it is published
+  migrate:
+    uses: ./.github/workflows/migrate.yml
+    secrets: inherit
+
   release:
+    needs: migrate
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7

@@ -1,4 +1,4 @@
--- Private voice signalling. Run after 003_private_uploads.sql: Supabase > SQL Editor > paste > Run.
+-- Private voice signalling.
 -- Run it BEFORE publishing the app version that uses private voice channels: without these
 -- policies that version cannot join a voice room. Older versions keep signalling on the public
 -- topic, so old and new versions do not hear each other (the app only connects peers that

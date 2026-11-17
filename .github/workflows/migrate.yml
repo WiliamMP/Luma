@@ -1,0 +1,41 @@
+# Applies new files in supabase/migrations to the Supabase database (supabase db push).
+# Runs on every push to master that touches migrations, and before every release build
+# (release.yml calls it), so a published version never expects columns that do not exist yet.
+#
+# Needs the repo secret SUPABASE_DB_URL: Supabase > Connect > Session pooler connection string,
+# with the database password filled in (the pooler works over IPv4, which GitHub runners need).
+name: Migrate database
+
+on:
+  push:
+    branches: [master]
+    paths: ["supabase/migrations/**"]
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      baseline:
+        description: "First run only: mark the migrations that were already run by hand in the SQL Editor as applied"
+        type: boolean
+        default: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    # a push to master and a tag push together must not migrate at the same time
+    concurrency:
+      group: supabase-migrate
+      cancel-in-progress: false
+    env:
+      DB: ${{ secrets.SUPABASE_DB_URL }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Mark hand-run migrations as applied
+        if: inputs.baseline
+        run: supabase migration repair --status applied 20261117000000 20261117000001 20261117000002 20261117000003 20261117000004 --remote="$DB" --yes
+
+      - run: supabase db push --remote="$DB" --yes
