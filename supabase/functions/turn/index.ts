@@ -1,6 +1,5 @@
 // Short-lived TURN credentials from Cloudflare Realtime TURN, so the Cloudflare token never ships in the app.
-// Secrets: supabase secrets set CF_TURN_KEY_ID=... CF_TURN_API_TOKEN=...
-// Deploy:  supabase functions deploy turn
+// Deployed, with its CF_TURN_KEY_ID / CF_TURN_API_TOKEN secrets, by .github/workflows/functions.yml
 
 const cors = {
   "Access-Control-Allow-Origin": "*",

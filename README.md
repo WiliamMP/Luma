@@ -23,12 +23,10 @@ Add a new file to `supabase/migrations` named `<YYYYMMDDHHMMSS>_<what>.sql` (lat
 Without TURN, voice only connects when both peers can reach each other directly (STUN). Some networks (mobile data, corporate, CGNAT) need a relay:
 
 1. Cloudflare dashboard > **Realtime > TURN Server** > create a TURN key. Copy the **Turn Token ID** and the **API Token**.
-2. ```sh
-   npx supabase login
-   npx supabase link --project-ref YOUR-PROJECT-REF
-   npx supabase secrets set CF_TURN_KEY_ID=... CF_TURN_API_TOKEN=...
-   npx supabase functions deploy turn
-   ```
+2. GitHub repo > **Settings > Secrets and variables > Actions**, add:
+   - `CF_TURN_KEY_ID` and `CF_TURN_API_TOKEN` (the Cloudflare values);
+   - `SUPABASE_ACCESS_TOKEN`: Supabase > **Account > Access Tokens** > generate one.
+3. Actions tab > **Deploy functions** > **Run workflow**. It copies the Cloudflare values into the function's secrets and deploys `supabase/functions/turn`. Later pushes that change `supabase/functions` deploy by themselves.
 
 The app asks the function for credentials (valid 24 h, logged-in users only) each time it joins a voice channel. Free tier: 1,000 GB of relayed traffic a month.
 

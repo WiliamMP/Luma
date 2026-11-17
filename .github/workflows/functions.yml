@@ -1,0 +1,39 @@
+# Deploys the Supabase Edge Functions in supabase/functions (today: `turn`, TURN credentials for voice)
+# on every push to master that touches them, or by hand from the Actions tab.
+#
+# Repo secrets:
+#   SUPABASE_ACCESS_TOKEN  Supabase > Account > Access Tokens (deploys go through the Management API)
+#   VITE_SUPABASE_URL      already there; the project ref is read from it
+#   CF_TURN_KEY_ID, CF_TURN_API_TOKEN  optional: Cloudflare TURN key, copied into the function's secrets
+name: Deploy functions
+
+on:
+  push:
+    branches: [master]
+    paths: ["supabase/functions/**"]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      URL: ${{ secrets.VITE_SUPABASE_URL }}
+      CF_TURN_KEY_ID: ${{ secrets.CF_TURN_KEY_ID }}
+      CF_TURN_API_TOKEN: ${{ secrets.CF_TURN_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Project ref from the Supabase URL
+        run: echo "REF=$(echo "$URL" | sed -E 's#^https://([^.]+)\..*#\1#')" >> "$GITHUB_ENV"
+
+      - name: Cloudflare TURN secrets
+        if: env.CF_TURN_KEY_ID != '' && env.CF_TURN_API_TOKEN != ''
+        run: supabase secrets set CF_TURN_KEY_ID="$CF_TURN_KEY_ID" CF_TURN_API_TOKEN="$CF_TURN_API_TOKEN" --remote="$REF" --yes
+
+      # --use-api: bundled by Supabase, no Docker needed on the runner
+      - run: supabase functions deploy --use-api --remote="$REF" --yes
