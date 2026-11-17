@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Hash, Headphones, HeadphoneOff, Mic, Pencil, MicOff, PhoneOff, Plus, ScreenShare, ScreenShareOff, Settings, Trash2, Volume2 } from "lucide-react";
+import { ChevronDown, Hash, Headphones, HeadphoneOff, Mic, Pencil, Video, VideoOff, MicOff, PhoneOff, Plus, ScreenShare, ScreenShareOff, Settings, Trash2, Volume2 } from "lucide-react";
 import { cn, errorText, openChannel, openDm, supabase, upload, useProfile, type Channel, type Server, type Status, type Target } from "@/lib";
 import { useProfileCard } from "./Profile";
 import { useVolumes } from "@/voice";
@@ -7,7 +7,7 @@ import { isMuted, toggleMute, type Unread } from "@/unread";
 import { Avatar, Badge, Modal, Name, UnreadBadge, button, dangerButton, ghost, input } from "./ui";
 
 /** v: voice protocol version of that person's app (see VOICE_PROTOCOL) */
-export type Presence = Map<string, { voice: string | null; screen: boolean; v: number; status: Status }>;
+export type Presence = Map<string, { voice: string | null; screen: boolean; cam: boolean; v: number; status: Status }>;
 
 const row = (active: boolean) =>
   cn(
@@ -142,6 +142,7 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
                         <Avatar id={id} size={22} />
                       </div>
                       <Name id={id} className="truncate" />
+                      {presence.get(id)?.cam && <Video className="size-3.5 shrink-0" aria-label="Câmera ligada" />}
                       {presence.get(id)?.screen && <span className="rounded bg-danger px-1 text-[10px] font-bold text-white">AO VIVO</span>}
                     </div>
                   ))}
@@ -406,7 +407,7 @@ function NewDm({ onClose, onOpen }: { onClose: () => void; onOpen: (t: Target) =
 
 // ───────── bottom: me + voice controls ─────────
 
-export function UserPanel({ me, voiceName, voiceState, muted, deafened, onMute, onDeafen, onHangUp, sharing, onShare, status }: {
+export function UserPanel({ me, voiceName, voiceState, muted, deafened, onMute, onDeafen, onHangUp, sharing, onShare, camera, onCamera, status }: {
   me: string;
   voiceName: string | null;
   voiceState: { ready: boolean; error: string | null };
@@ -417,6 +418,8 @@ export function UserPanel({ me, voiceName, voiceState, muted, deafened, onMute, 
   onHangUp: () => void;
   sharing: boolean;
   onShare: () => void;
+  camera: boolean;
+  onCamera: () => void;
   /** my status as others see it (auto-away included) */
   status: Status;
 }) {
@@ -433,6 +436,9 @@ export function UserPanel({ me, voiceName, voiceState, muted, deafened, onMute, 
             <div className="truncate text-xs text-dim">{voiceState.error ?? voiceName}</div>
           </div>
           <div className="flex">
+            <button title={camera ? "Desligar câmera" : "Ligar câmera"} className={cn(icon, camera && "text-online")} onClick={onCamera} disabled={!voiceState.ready}>
+              {camera ? <VideoOff className="size-4" /> : <Video className="size-4" />}
+            </button>
             <button title={sharing ? "Parar de compartilhar" : "Compartilhar tela"} className={cn(icon, sharing && "text-online")} onClick={onShare} disabled={!voiceState.ready}>
               {sharing ? <ScreenShareOff className="size-4" /> : <ScreenShare className="size-4" />}
             </button>

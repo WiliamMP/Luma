@@ -1,6 +1,6 @@
 # Luma
 
-Desktop chat app (Tauri + React + Supabase): servers (with icons, kick, rename), text and voice channels, screen sharing, per-person volume, direct messages, replies, edits, reactions, pins, @mentions, Markdown-style formatting, search, image/file uploads, profiles with status and bio, Online/Ausente/Não perturbe, typing indicator, auto-update.
+Desktop chat app (Tauri + React + Supabase): servers (with icons, kick, rename), text and voice channels, camera and screen sharing, per-person volume, direct messages, replies, edits, reactions, pins, @mentions, Markdown-style formatting, search, image/file uploads, profiles with status and bio, Online/Ausente/Não perturbe, typing indicator, auto-update.
 
 ## Setup (once)
 
@@ -48,7 +48,7 @@ The Supabase URL and key are baked in at build time, so rebuild after changing `
 - Files: private `uploads` bucket; the database stores paths and the app shows them through signed URLs (`*_private_uploads.sql`).
 - Online status (Online/Ausente/Não perturbe), "who is in which voice channel" and who is sharing a screen: one Realtime presence channel (`online`).
 - Unread: a `reads` table keeps the last message id each user has seen per channel/DM; `unread_counts()` counts the rest. Windows notifications come from `tauri-plugin-notification`.
-- Voice and screen share: WebRTC peer-to-peer mesh (`src/voice.ts`), signalling over a private Realtime broadcast channel per voice room (only members of the server can join it). STUN, plus TURN relays from Cloudflare when the `turn` edge function is deployed (see below).
+- Voice, camera and screen share: WebRTC peer-to-peer mesh (`src/voice.ts`), signalling over a private Realtime broadcast channel per voice room (only members of the server can join it). STUN, plus TURN relays from Cloudflare when the `turn` edge function is deployed (see below).
 
 ## Known limits
 

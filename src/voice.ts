@@ -8,7 +8,7 @@ const STUN: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
  * Announced in presence; peers only connect to peers with the same number. Bump it whenever the
  * signalling changes in a way older versions cannot follow (2 = private channel + video transceiver).
  */
-export const VOICE_PROTOCOL = 2;
+export const VOICE_PROTOCOL = 3; // 3 = a second video transceiver for the camera
 
 // chosen microphone (deviceId, "" = system default), saved on this device only (ids differ per computer)
 const micStore = stored("luma:mic", "");
@@ -58,8 +58,18 @@ async function iceServers(): Promise<RTCIceServer[]> {
 }
 
 type Signal = { from: string; to: string; description?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit };
-/** `video`: one sendrecv video transceiver per pair, negotiated up front and empty until someone shares a screen */
-type Peer = { pc: RTCPeerConnection; audio: HTMLAudioElement; queue: RTCIceCandidateInit[]; video: RTCRtpTransceiver | null };
+/**
+ * `video` (screen) and `camera`: two sendrecv video transceivers per pair, negotiated up front in
+ * that order and empty until someone shares a screen or turns the camera on
+ */
+type Peer = { pc: RTCPeerConnection; audio: HTMLAudioElement; queue: RTCIceCandidateInit[]; video: RTCRtpTransceiver | null; camera: RTCRtpTransceiver | null };
+
+const without = <T,>(m: Map<string, T>, id: string) => {
+  if (!m.has(id)) return m;
+  const next = new Map(m);
+  next.delete(id);
+  return next;
+};
 
 /**
  * Mesh voice chat: one RTCPeerConnection per other person in the room, signalling over a
@@ -82,6 +92,10 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
   const screenRef = useRef<MediaStream | null>(null);
   /** peer id -> their video stream (frames only arrive while they share) */
   const [remote, setRemote] = useState<Map<string, MediaStream>>(new Map());
+  const [cam, setCam] = useState<MediaStream | null>(null);
+  const camRef = useRef<MediaStream | null>(null);
+  /** peer id -> their camera stream (frames only arrive while it is on) */
+  const [remoteCam, setRemoteCam] = useState<Map<string, MediaStream>>(new Map());
   /** who is talking right now (me included), from the audio level of each stream */
   const [speaking, setSpeaking] = useState<Set<string>>(new Set());
   const meters = useRef(new Map<string, { an: AnalyserNode; loudAt: number }>());
@@ -110,6 +124,10 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
     peer.video?.sender.replaceTrack(screenRef.current?.getVideoTracks()[0] ?? null).catch(console.error);
   }
 
+  function attachCamera(peer: Peer) {
+    peer.camera?.sender.replaceTrack(camRef.current?.getVideoTracks()[0] ?? null).catch(console.error);
+  }
+
   function connect(id: string, offerer = false) {
     const existing = conns.current.get(id);
     if (existing) return existing;
@@ -118,14 +136,20 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
     audio.autoplay = true;
     audio.muted = deaf.current;
     audio.volume = volumeOf(id);
-    const peer: Peer = { pc, audio, queue: [], video: null };
+    const peer: Peer = { pc, audio, queue: [], video: null, camera: null };
     stream.current?.getTracks().forEach((t) => pc.addTrack(t, stream.current!));
     if (offerer) {
       peer.video = pc.addTransceiver("video", { direction: "sendrecv" });
+      peer.camera = pc.addTransceiver("video", { direction: "sendrecv" });
       attachScreen(peer);
+      attachCamera(peer);
     }
     pc.ontrack = (e) => {
-      if (e.track.kind === "video") return setRemote((m) => new Map(m).set(id, new MediaStream([e.track])));
+      if (e.track.kind === "video") {
+        // first video m-line is the screen, second the camera (the offer adds them in that order)
+        const isCamera = pc.getTransceivers().filter((t) => t.receiver.track.kind === "video").indexOf(e.transceiver) === 1;
+        return (isCamera ? setRemoteCam : setRemote)((m) => new Map(m).set(id, new MediaStream([e.track])));
+      }
       audio.srcObject = e.streams[0] ?? new MediaStream([e.track]);
       audio.play().catch(() => {});
       meter(id, audio.srcObject as MediaStream);
@@ -145,12 +169,8 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
     p.audio.srcObject = null;
     conns.current.delete(id);
     meters.current.delete(id);
-    setRemote((m) => {
-      if (!m.has(id)) return m;
-      const next = new Map(m);
-      next.delete(id);
-      return next;
-    });
+    setRemote((m) => without(m, id));
+    setRemoteCam((m) => without(m, id));
   }
 
   async function onSignal(s: Signal) {
@@ -159,9 +179,13 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
     if (s.description) {
       await peer.pc.setRemoteDescription(s.description);
       if (s.description.type === "offer") {
-        // answer with sendrecv on the offered video transceiver so we can share our screen too
-        peer.video ??= peer.pc.getTransceivers().find((t) => t.receiver.track.kind === "video") ?? null;
-        if (peer.video) (peer.video.direction = "sendrecv"), attachScreen(peer);
+        // answer with sendrecv on the offered video transceivers so we can send screen and camera too
+        const videos = peer.pc.getTransceivers().filter((t) => t.receiver.track.kind === "video");
+        peer.video ??= videos[0] ?? null;
+        peer.camera ??= videos[1] ?? null;
+        for (const t of [peer.video, peer.camera]) if (t) t.direction = "sendrecv";
+        attachScreen(peer);
+        attachCamera(peer);
         await peer.pc.setLocalDescription(await peer.pc.createAnswer());
         send({ to: s.from, description: peer.pc.localDescription!.toJSON() });
       }
@@ -202,6 +226,7 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
       setReadyRoom(null);
       [...conns.current.keys()].forEach(drop);
       stopShare();
+      stopCamera();
       meters.current.clear();
       audioCtx.current?.close().catch(() => {});
       audioCtx.current = null;
@@ -303,5 +328,26 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
     conns.current.forEach(attachScreen);
   }
 
-  return { ready, error, screen, remote, speaking, share, stopShare };
+  async function startCamera() {
+    let s: MediaStream;
+    try {
+      s = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 24 } } });
+    } catch (e) {
+      return setError(errorText(e)); // no camera / permission denied
+    }
+    s.getVideoTracks()[0].onended = stopCamera; // unplugged
+    camRef.current = s;
+    setCam(s);
+    conns.current.forEach(attachCamera);
+  }
+
+  function stopCamera() {
+    if (!camRef.current) return;
+    camRef.current.getTracks().forEach((t) => t.stop());
+    camRef.current = null;
+    setCam(null);
+    conns.current.forEach(attachCamera);
+  }
+
+  return { ready, error, screen, remote, cam, remoteCam, speaking, share, stopShare, startCamera, stopCamera };
 }

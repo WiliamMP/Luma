@@ -96,7 +96,7 @@ function UpdateBar() {
   );
 }
 
-type Meta = { voice: string | null; screen?: boolean; v?: number; status?: Status };
+type Meta = { voice: string | null; screen?: boolean; cam?: boolean; v?: number; status?: Status };
 
 /**
  * One person can have Luma open in several places (one presence entry each). Voice comes from the
@@ -105,7 +105,7 @@ type Meta = { voice: string | null; screen?: boolean; v?: number; status?: Statu
 function merge(metas: Meta[]) {
   const call = metas.find((m) => m.voice) ?? metas[0];
   const status: Status = metas.map((m) => m.status ?? "online").find((s) => s !== "away") ?? "away";
-  return { voice: call?.voice ?? null, screen: !!call?.screen, v: call?.v ?? 1, status };
+  return { voice: call?.voice ?? null, screen: !!call?.screen, cam: !!call?.cam, v: call?.v ?? 1, status };
 }
 
 function Setup() {
@@ -198,8 +198,8 @@ function Main({ me }: { me: string }) {
   // announce our voice room only once the signalling channel is up, so peers do not call us too early
   useEffect(() => {
     const room = voiceState.ready ? voice?.id ?? null : null;
-    if (subscribed) online.current?.track({ voice: room, screen: !!room && !!voiceState.screen, v: VOICE_PROTOCOL, status });
-  }, [subscribed, voiceState.ready, voice?.id, !!voiceState.screen, status]);
+    if (subscribed) online.current?.track({ voice: room, screen: !!room && !!voiceState.screen, cam: !!room && !!voiceState.cam, v: VOICE_PROTOCOL, status });
+  }, [subscribed, voiceState.ready, voice?.id, !!voiceState.screen, !!voiceState.cam, status]);
 
   // chime when someone joins or leaves my call (and when I join or leave it); quiet while deafened
   const others = voiceState.ready ? peers.filter((id) => id !== me).sort().join(",") : null;
@@ -215,6 +215,10 @@ function Main({ me }: { me: string }) {
   // screens shared in my voice room (mine included)
   const shares = voice
     ? peers.filter((id) => presence.get(id)?.screen).map((id) => ({ id, stream: id === me ? voiceState.screen : voiceState.remote.get(id) ?? null }))
+    : [];
+  // cameras turned on in my voice room (mine included)
+  const cams = voice
+    ? peers.filter((id) => presence.get(id)?.cam).map((id) => ({ id, stream: id === me ? voiceState.cam : voiceState.remoteCam.get(id) ?? null }))
     : [];
 
   const server = servers.find((s) => s.id === selected);
@@ -269,10 +273,12 @@ function Main({ me }: { me: string }) {
           status={status}
             sharing={!!voiceState.screen}
             onShare={() => (voiceState.screen ? voiceState.stopShare() : voiceState.share())}
+            camera={!!voiceState.cam}
+            onCamera={() => (voiceState.cam ? voiceState.stopCamera() : voiceState.startCamera())}
           />
         </div>
         <div className="flex min-w-0 flex-1 flex-col">
-          {shares.length > 0 && <Stage shares={shares} />}
+          {shares.length + cams.length > 0 && <Stage me={me} shares={shares} cams={cams} />}
           {target ? (
             <Chat key={target.id} me={me} target={target} owner={target.kind === "channel" && server?.owner_id === me} focused={focused} onSeen={markRead} />
           ) : (
