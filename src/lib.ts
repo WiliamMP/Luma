@@ -7,7 +7,8 @@ const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 export const configured = Boolean(url && key);
 export const supabase = createClient(url || "http://localhost", key || "missing");
 
-export type Profile = { id: string; username: string; avatar_url: string | null };
+export type Profile = { id: string; username: string; avatar_url: string | null; status: string; bio: string };
+export const PROFILE_COLUMNS = "id, username, avatar_url, status, bio";
 export type Server = { id: string; name: string; owner_id: string };
 export type Channel = { id: string; server_id: string; name: string; kind: "text" | "voice" };
 export type Message = {
@@ -42,7 +43,7 @@ function request(id: string) {
   clearTimeout(timer);
   timer = window.setTimeout(async () => {
     const ids = [...pending];
-    const { data } = await supabase.from("profiles").select("id, username, avatar_url").in("id", ids);
+    const { data } = await supabase.from("profiles").select(PROFILE_COLUMNS).in("id", ids);
     data?.forEach((p) => profiles.set(p.id, p));
     ids.forEach((i) => pending.delete(i));
     emit();
@@ -63,13 +64,20 @@ export function useProfile(id: string | null | undefined) {
 /** non-hook read, fetching the profile if it is not cached yet */
 export async function getProfile(id: string) {
   if (!profiles.has(id)) {
-    const { data } = await supabase.from("profiles").select("id, username, avatar_url").eq("id", id).maybeSingle();
+    const { data } = await supabase.from("profiles").select(PROFILE_COLUMNS).eq("id", id).maybeSingle();
     if (data) putProfile(data);
   }
   return profiles.get(id);
 }
 
 // ───────── misc ─────────
+
+/** opens (or creates) the DM with `other` */
+export async function openDm(other: string, name: string): Promise<Target> {
+  const { data, error } = await supabase.rpc("open_dm", { other });
+  if (error) throw error;
+  return { kind: "dm", id: data as string, name };
+}
 
 export async function upload(userId: string, file: File) {
   const safe = file.name.replace(/[^\w.-]/g, "_").slice(-80);

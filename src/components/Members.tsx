@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { Crown, Volume2 } from "lucide-react";
-import { supabase, type Server, type Target } from "@/lib";
+import { supabase, useProfile, type Server } from "@/lib";
 import { Avatar, Name } from "./ui";
-import { openDm, type Presence } from "./Sidebar";
+import { useProfileCard } from "./Profile";
+import type { Presence } from "./Sidebar";
 
-export function Members({ server, me, presence, onTarget }: { server: Server; me: string; presence: Presence; onTarget: (t: Target) => void }) {
+export function Members({ server, presence }: { server: Server; presence: Presence }) {
+  const card = useProfileCard();
   const [ids, setIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -31,14 +33,15 @@ export function Members({ server, me, presence, onTarget }: { server: Server; me
             {g.list.map((id) => (
               <button
                 key={id}
-                disabled={id === me}
-                className="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left hover:bg-raised/60 disabled:hover:bg-transparent"
+                className="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left hover:bg-raised/60"
                 style={{ opacity: presence.has(id) ? 1 : 0.45 }}
-                title={id === me ? undefined : "Mandar mensagem"}
-                onClick={async (e) => onTarget(await openDm(id, e.currentTarget.textContent ?? ""))}
+                onClick={() => card.show(id)}
               >
                 <Avatar id={id} size={32} online={presence.has(id)} />
-                <Name id={id} className="flex-1 truncate text-sm" />
+                <div className="min-w-0 flex-1">
+                  <Name id={id} className="block truncate text-sm" />
+                  <Status id={id} />
+                </div>
                 {presence.get(id)?.voice && <Volume2 className="size-3.5 text-online" />}
                 {server.owner_id === id && <Crown className="size-3.5 text-[#f5a524]" />}
               </button>
@@ -48,4 +51,9 @@ export function Members({ server, me, presence, onTarget }: { server: Server; me
       )}
     </aside>
   );
+}
+
+function Status({ id }: { id: string }) {
+  const status = useProfile(id)?.status;
+  return status ? <div className="truncate text-xs text-dim">{status}</div> : null;
 }

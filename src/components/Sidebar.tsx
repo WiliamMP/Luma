@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Hash, Headphones, HeadphoneOff, LogOut, Mic, MicOff, PhoneOff, Plus, ScreenShare, ScreenShareOff, Settings, Trash2, Volume2 } from "lucide-react";
-import { cn, errorText, putProfile, supabase, upload, useProfile, type Channel, type Server, type Target } from "@/lib";
+import { ChevronDown, Hash, Headphones, HeadphoneOff, Mic, MicOff, PhoneOff, Plus, ScreenShare, ScreenShareOff, Settings, Trash2, Volume2 } from "lucide-react";
+import { cn, errorText, openDm, supabase, useProfile, type Channel, type Server, type Target } from "@/lib";
+import { useProfileCard } from "./Profile";
 import { isMuted, toggleMute, type Unread } from "@/unread";
 import { Avatar, Badge, Modal, Name, button, ghost, input } from "./ui";
 
@@ -49,6 +50,7 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
     return () => void supabase.removeChannel(sub);
   }, [server.id]);
 
+  const card = useProfileCard();
   const inVoice = (cid: string) => [...presence].filter(([, p]) => p.voice === cid).map(([id]) => id);
 
   async function remove(c: Channel) {
@@ -105,7 +107,7 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
                 </button>
                 {kind === "voice" &&
                   inVoice(c.id).map((id) => (
-                    <div key={id} className="flex items-center gap-2 py-1 pl-8 text-sm text-dim">
+                    <div key={id} className="flex cursor-pointer items-center gap-2 py-1 pl-8 text-sm text-dim hover:text-fg" onClick={() => card.show(id)}>
                       <Avatar id={id} size={22} />
                       <Name id={id} className="truncate" />
                       {presence.get(id)?.screen && <span className="rounded bg-danger px-1 text-[10px] font-bold text-white">AO VIVO</span>}
@@ -240,12 +242,6 @@ function DmRow({ id, active, online, unread, onClick }: { id: string; active: bo
   );
 }
 
-export async function openDm(other: string, name: string): Promise<Target> {
-  const { data, error } = await supabase.rpc("open_dm", { other });
-  if (error) throw error;
-  return { kind: "dm", id: data as string, name };
-}
-
 function NewDm({ onClose, onOpen }: { onClose: () => void; onOpen: (t: Target) => void }) {
   const [name, setName] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -281,7 +277,7 @@ export function UserPanel({ me, voiceName, voiceState, muted, deafened, onMute, 
   sharing: boolean;
   onShare: () => void;
 }) {
-  const [settings, setSettings] = useState(false);
+  const card = useProfileCard();
   const icon = "grid size-8 place-items-center rounded-md text-dim hover:bg-raised hover:text-fg";
   return (
     <div className="border-t border-line bg-bg/60">
@@ -304,60 +300,20 @@ export function UserPanel({ me, voiceName, voiceState, muted, deafened, onMute, 
         </div>
       )}
       <div className="flex items-center gap-2 px-2 py-2">
-        <Avatar id={me} size={32} online />
-        <Name id={me} className="min-w-0 flex-1 truncate text-sm font-medium" />
+        <button className="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left hover:bg-raised/60" onClick={() => card.show(me)}>
+          <Avatar id={me} size={32} online />
+          <Name id={me} className="min-w-0 flex-1 truncate text-sm font-medium" />
+        </button>
         <button title={muted ? "Ativar microfone" : "Silenciar"} className={cn(icon, muted && "text-danger")} onClick={onMute}>
           {muted ? <MicOff className="size-4" /> : <Mic className="size-4" />}
         </button>
         <button title={deafened ? "Ativar áudio" : "Desativar áudio"} className={cn(icon, deafened && "text-danger")} onClick={onDeafen}>
           {deafened ? <HeadphoneOff className="size-4" /> : <Headphones className="size-4" />}
         </button>
-        <button title="Perfil" className={icon} onClick={() => setSettings(true)}>
+        <button title="Perfil" className={icon} onClick={card.edit}>
           <Settings className="size-4" />
         </button>
       </div>
-      {settings && <ProfileDialog me={me} onClose={() => setSettings(false)} />}
     </div>
-  );
-}
-
-function ProfileDialog({ me, onClose }: { me: string; onClose: () => void }) {
-  const p = useProfile(me);
-  const [name, setName] = useState(p?.username ?? "");
-  const [err, setErr] = useState<string | null>(null);
-
-  async function save(patch: { username?: string; avatar_url?: string }) {
-    setErr(null);
-    const { data, error } = await supabase.from("profiles").update(patch).eq("id", me).select("id, username, avatar_url").single();
-    if (error) setErr(error.code === "23505" ? "Nome já em uso" : errorText(error));
-    else putProfile(data);
-  }
-
-  return (
-    <Modal title="Meu perfil" onClose={onClose}>
-      <div className="flex items-center gap-4">
-        <label className="cursor-pointer" title="Trocar avatar">
-          <Avatar id={me} size={72} />
-          <input
-            type="file"
-            accept="image/*"
-            hidden
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) upload(me, f).then((url) => save({ avatar_url: url }), (e) => setErr(errorText(e)));
-            }}
-          />
-        </label>
-        <form className="flex flex-1 gap-2" onSubmit={(e) => (e.preventDefault(), save({ username: name.trim() }))}>
-          <input className={input} value={name} onChange={(e) => setName(e.target.value)} minLength={2} maxLength={32} pattern="[a-zA-Z0-9_.]+" required />
-          <button className={button}>Salvar</button>
-        </form>
-      </div>
-      <p className="mt-2 text-xs text-dim">Clique no avatar para trocar a imagem.</p>
-      {err && <p className="mt-2 text-sm text-danger">{err}</p>}
-      <button className={cn(ghost, "mt-5 flex items-center gap-2 px-0 text-danger hover:bg-transparent")} onClick={() => supabase.auth.signOut()}>
-        <LogOut className="size-4" /> Sair da conta
-      </button>
-    </Modal>
   );
 }

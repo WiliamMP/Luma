@@ -11,6 +11,7 @@ import { DmSidebar, ServerSidebar, UserPanel, type Presence } from "./components
 import { Chat } from "./components/Chat";
 import { Members } from "./components/Members";
 import { Stage } from "./components/Stage";
+import { ProfileProvider } from "./components/Profile";
 import { WindowControls, dragWindow } from "./components/WindowControls";
 
 export default function App() {
@@ -160,49 +161,51 @@ function Main({ me }: { me: string }) {
   const toDm = (t: Target) => (setSelected("home"), setTarget(t));
 
   return (
-    <div className="flex h-full">
-      <Rail servers={servers} unread={unread} selected={selected} onSelect={pick} onJoined={(id) => loadServers().then(() => pick(id))} />
-      <div className="flex w-60 shrink-0 flex-col bg-panel">
-        {server ? (
-          <ServerSidebar
-            key={server.id}
-            server={server}
+    <ProfileProvider me={me} onDm={toDm}>
+      <div className="flex h-full">
+        <Rail servers={servers} unread={unread} selected={selected} onSelect={pick} onJoined={(id) => loadServers().then(() => pick(id))} />
+        <div className="flex w-60 shrink-0 flex-col bg-panel">
+          {server ? (
+            <ServerSidebar
+              key={server.id}
+              server={server}
+              me={me}
+              target={target}
+              onTarget={setTarget}
+              unread={unread}
+              presence={presence}
+              voiceRoom={voice?.id ?? null}
+              onVoice={(c) => setVoice({ id: c.id, name: `${c.name} / ${server.name}` })}
+              onGone={() => (loadServers(), pick("home"))}
+            />
+          ) : (
+            <DmSidebar me={me} target={target} onTarget={setTarget} unread={unread} presence={presence} />
+          )}
+          <UserPanel
             me={me}
-            target={target}
-            onTarget={setTarget}
-            unread={unread}
-            presence={presence}
-            voiceRoom={voice?.id ?? null}
-            onVoice={(c) => setVoice({ id: c.id, name: `${c.name} / ${server.name}` })}
-            onGone={() => (loadServers(), pick("home"))}
+            voiceName={voice?.name ?? null}
+            voiceState={voiceState}
+            muted={muted}
+            deafened={deafened}
+            onMute={() => setMuted(!muted)}
+            onDeafen={() => setDeafened(!deafened)}
+            onHangUp={() => setVoice(null)}
+            sharing={!!voiceState.screen}
+            onShare={() => (voiceState.screen ? voiceState.stopShare() : voiceState.share())}
           />
-        ) : (
-          <DmSidebar me={me} target={target} onTarget={setTarget} unread={unread} presence={presence} />
-        )}
-        <UserPanel
-          me={me}
-          voiceName={voice?.name ?? null}
-          voiceState={voiceState}
-          muted={muted}
-          deafened={deafened}
-          onMute={() => setMuted(!muted)}
-          onDeafen={() => setDeafened(!deafened)}
-          onHangUp={() => setVoice(null)}
-          sharing={!!voiceState.screen}
-          onShare={() => (voiceState.screen ? voiceState.stopShare() : voiceState.share())}
-        />
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col">
+          {shares.length > 0 && <Stage shares={shares} />}
+          {target ? (
+            <Chat key={target.id} me={me} target={target} focused={focused} onSeen={markRead} />
+          ) : (
+            <div className="grid flex-1 place-items-center bg-card text-sm text-dim">
+              {server ? "Este servidor não tem canais de texto." : "Escolha uma conversa ou comece uma nova."}
+            </div>
+          )}
+        </div>
+        {server && <Members server={server} presence={presence} />}
       </div>
-      <div className="flex min-w-0 flex-1 flex-col">
-        {shares.length > 0 && <Stage shares={shares} />}
-        {target ? (
-          <Chat key={target.id} me={me} target={target} focused={focused} onSeen={markRead} />
-        ) : (
-          <div className="grid flex-1 place-items-center bg-card text-sm text-dim">
-            {server ? "Este servidor não tem canais de texto." : "Escolha uma conversa ou comece uma nova."}
-          </div>
-        )}
-      </div>
-      {server && <Members server={server} me={me} presence={presence} onTarget={toDm} />}
-    </div>
+    </ProfileProvider>
   );
 }

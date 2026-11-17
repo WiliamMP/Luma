@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AtSign, FileText, Hash, Loader2, PlusCircle, Trash2 } from "lucide-react";
 import { errorText, fileUrl, isImage, open, supabase, upload, useFileUrl, useProfile, type Message, type Target } from "@/lib";
 import { Avatar } from "./ui";
+import { useProfileCard } from "./Profile";
 
 const GROUP_MS = 5 * 60 * 1000;
 const PAGE = 100;
@@ -158,6 +159,7 @@ export function Chat({ me, target, focused, onSeen }: {
 
 function Row({ m, grouped, mine }: { m: Message; grouped: boolean; mine: boolean }) {
   const author = useProfile(m.author_id);
+  const card = useProfileCard();
   const time = new Date(m.created_at);
   return (
     <div className={`group relative flex gap-4 px-4 hover:bg-raised/40 ${grouped ? "py-0.5" : "mt-3 py-0.5"}`}>
@@ -167,13 +169,17 @@ function Row({ m, grouped, mine }: { m: Message; grouped: boolean; mine: boolean
             {time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           </span>
         ) : (
-          <Avatar id={m.author_id} />
+          <button className="rounded-full" onClick={() => card.show(m.author_id)}>
+            <Avatar id={m.author_id} />
+          </button>
         )}
       </div>
       <div className="min-w-0 flex-1">
         {!grouped && (
           <div className="flex items-baseline gap-2">
-            <span className="font-medium">{author?.username ?? "…"}</span>
+            <button className="font-medium hover:underline" onClick={() => card.show(m.author_id)}>
+              {author?.username ?? "…"}
+            </button>
             <span className="text-xs text-dim">{time.toLocaleString([], { dateStyle: "short", timeStyle: "short" })}</span>
           </div>
         )}
