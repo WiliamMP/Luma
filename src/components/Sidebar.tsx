@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Hash, Headphones, HeadphoneOff, Mic, MicOff, PhoneOff, Plus, ScreenShare, ScreenShareOff, Settings, Trash2, Volume2 } from "lucide-react";
+import { ChevronDown, Hash, Headphones, HeadphoneOff, Mic, Pencil, MicOff, PhoneOff, Plus, ScreenShare, ScreenShareOff, Settings, Trash2, Volume2 } from "lucide-react";
 import { cn, errorText, openDm, supabase, useProfile, type Channel, type Server, type Target } from "@/lib";
 import { useProfileCard } from "./Profile";
 import { isMuted, toggleMute, type Unread } from "@/unread";
@@ -15,7 +15,7 @@ const row = (active: boolean) =>
 
 // ───────── server: channels ─────────
 
-export function ServerSidebar({ server, me, target, onTarget, unread, presence, voiceRoom, onVoice, onGone }: {
+export function ServerSidebar({ server, me, target, onTarget, unread, presence, voiceRoom, onVoice, onGone, onRenamed }: {
   server: Server;
   me: string;
   target: Target | null;
@@ -25,10 +25,12 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
   voiceRoom: string | null;
   onVoice: (c: Channel) => void;
   onGone: () => void;
+  onRenamed: () => void;
 }) {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [menu, setMenu] = useState(false);
-  const [dialog, setDialog] = useState<null | "invite" | "channel" | "delete">(null);
+  const [dialog, setDialog] = useState<null | "invite" | "channel" | "delete" | "rename">(null);
+  const [renaming, setRenaming] = useState<Channel | null>(null);
   const owner = server.owner_id === me;
   const current = useRef(target);
   current.current = target;
@@ -68,6 +70,7 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
           <div className="absolute inset-x-2 top-13 z-10 rounded-lg border border-line bg-bg p-1.5 text-sm shadow-xl" onMouseLeave={() => setMenu(false)}>
             <MenuItem onClick={() => (setDialog("invite"), setMenu(false))}>Convidar pessoas</MenuItem>
             {owner && <MenuItem onClick={() => (setDialog("channel"), setMenu(false))}>Criar canal</MenuItem>}
+            {owner && <MenuItem onClick={() => (setDialog("rename"), setMenu(false))}>Renomear servidor</MenuItem>}
             <MenuItem onClick={() => (toggleMute(server.id), setMenu(false))}>
               {isMuted(server.id) ? "Ativar notificações" : "Silenciar notificações"}
             </MenuItem>
@@ -102,7 +105,10 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
                   <span className={cn("flex-1 truncate", unread.has(c.id) && "font-semibold text-fg")}>{c.name}</span>
                   <Badge n={unread.get(c.id)?.count ?? 0} />
                   {owner && (
-                    <Trash2 className="size-3.5 opacity-0 hover:text-danger group-hover:opacity-100" onClick={(e) => (e.stopPropagation(), remove(c))} />
+                    <>
+                      <Pencil className="size-3.5 opacity-0 hover:text-fg group-hover:opacity-100" onClick={(e) => (e.stopPropagation(), setRenaming(c))} />
+                      <Trash2 className="size-3.5 opacity-0 hover:text-danger group-hover:opacity-100" onClick={(e) => (e.stopPropagation(), remove(c))} />
+                    </>
                   )}
                 </button>
                 {kind === "voice" &&
@@ -118,8 +124,32 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
           </div>
         ))}
       </div>
-      {dialog === "invite" && <InviteDialog server={server} onClose={() => setDialog(null)} />}
+      {dialog === "invite" && <InviteDialog server={server} owner={owner} onClose={() => setDialog(null)} />}
       {dialog === "channel" && <ChannelDialog server={server} onClose={() => setDialog(null)} />}
+      {dialog === "rename" && (
+        <RenameDialog
+          title="Renomear servidor"
+          initial={server.name}
+          onClose={() => setDialog(null)}
+          // ponytail: servers are not in Realtime (invite_code is column-restricted), so other members see the new name on their next load
+          onSave={async (name) => {
+            const { error } = await supabase.from("servers").update({ name }).eq("id", server.id);
+            if (!error) onRenamed();
+            return error;
+          }}
+        />
+      )}
+      {renaming && (
+        <RenameDialog
+          title="Renomear canal"
+          initial={renaming.name}
+          onClose={() => setRenaming(null)}
+          onSave={async (name) => {
+            const { error } = await supabase.from("channels").update({ name: channelName(renaming.kind, name) }).eq("id", renaming.id);
+            return error;
+          }}
+        />
+      )}
       {dialog === "delete" && (
         <Modal title={`Excluir "${server.name}"?`} onClose={() => setDialog(null)}>
           <p className="mb-4 text-sm text-dim">Todos os canais e mensagens serão apagados. Não dá para desfazer.</p>
@@ -143,9 +173,18 @@ function MenuItem({ children, onClick, danger }: { children: React.ReactNode; on
   );
 }
 
-function InviteDialog({ server, onClose }: { server: Server; onClose: () => void }) {
+function InviteDialog({ server, owner, onClose }: { server: Server; owner: boolean; onClose: () => void }) {
   const [code, setCode] = useState("…");
   const [copied, setCopied] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // a new code stops the old one from working (e.g. after kicking someone)
+  async function regenerate() {
+    const next = [...crypto.getRandomValues(new Uint8Array(4))].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const { error } = await supabase.from("servers").update({ invite_code: next }).eq("id", server.id);
+    if (error) setErr(errorText(error));
+    else (setCode(next), setCopied(false));
+  }
   useEffect(() => {
     supabase.rpc("get_invite", { sid: server.id }).then(({ data }) => setCode(data ?? "?"));
   }, [server.id]);
@@ -158,6 +197,42 @@ function InviteDialog({ server, onClose }: { server: Server; onClose: () => void
           {copied ? "Copiado" : "Copiar"}
         </button>
       </div>
+      {owner && (
+        <button className={cn(ghost, "mt-3 px-0 hover:bg-transparent")} onClick={regenerate}>
+          Gerar novo código (o atual para de funcionar)
+        </button>
+      )}
+      {err && <p className="mt-2 text-sm text-danger">{err}</p>}
+    </Modal>
+  );
+}
+
+/** text channels are lowercase-with-dashes, voice channels keep the name as typed */
+const channelName = (kind: Channel["kind"], name: string) => (kind === "text" ? name.trim().toLowerCase().replace(/\s+/g, "-") : name.trim());
+
+function RenameDialog({ title, initial, onSave, onClose }: {
+  title: string;
+  initial: string;
+  onSave: (name: string) => Promise<{ message: string } | null>;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(initial);
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <Modal title={title} onClose={onClose}>
+      <form
+        className="flex gap-2"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          const error = await onSave(name.trim());
+          if (error) setErr(errorText(error));
+          else onClose();
+        }}
+      >
+        <input className={input} value={name} onChange={(e) => setName(e.target.value)} maxLength={64} required autoFocus />
+        <button className={button}>Salvar</button>
+      </form>
+      {err && <p className="mt-3 text-sm text-danger">{err}</p>}
     </Modal>
   );
 }
@@ -168,7 +243,7 @@ function ChannelDialog({ server, onClose }: { server: Server; onClose: () => voi
   const [err, setErr] = useState<string | null>(null);
   async function create(e: React.FormEvent) {
     e.preventDefault();
-    const { error } = await supabase.from("channels").insert({ server_id: server.id, name: kind === "text" ? name.toLowerCase().replace(/\s+/g, "-") : name, kind });
+    const { error } = await supabase.from("channels").insert({ server_id: server.id, name: channelName(kind, name), kind });
     if (error) setErr(errorText(error));
     else onClose();
   }

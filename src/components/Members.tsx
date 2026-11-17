@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
-import { Crown, Volume2 } from "lucide-react";
+import { Crown, UserMinus, Volume2 } from "lucide-react";
 import { supabase, useProfile, type Server } from "@/lib";
-import { Avatar, Name } from "./ui";
+import { Avatar, Modal, Name, button, ghost } from "./ui";
 import { useProfileCard } from "./Profile";
 import type { Presence } from "./Sidebar";
 
-export function Members({ server, presence }: { server: Server; presence: Presence }) {
+export function Members({ server, me, presence }: { server: Server; me: string; presence: Presence }) {
   const card = useProfileCard();
   const [ids, setIds] = useState<string[]>([]);
+  const [kicking, setKicking] = useState<string | null>(null);
+  const owner = server.owner_id === me;
 
   useEffect(() => {
     const load = () =>
@@ -31,9 +33,10 @@ export function Members({ server, presence }: { server: Server; presence: Presen
               {g.label} — {g.list.length}
             </div>
             {g.list.map((id) => (
-              <button
+              <div
                 key={id}
-                className="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left hover:bg-raised/60"
+                role="button"
+                className="group flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-left hover:bg-raised/60"
                 style={{ opacity: presence.has(id) ? 1 : 0.45 }}
                 onClick={() => card.show(id)}
               >
@@ -44,10 +47,33 @@ export function Members({ server, presence }: { server: Server; presence: Presen
                 </div>
                 {presence.get(id)?.voice && <Volume2 className="size-3.5 text-online" />}
                 {server.owner_id === id && <Crown className="size-3.5 text-[#f5a524]" />}
-              </button>
+                {owner && id !== me && (
+                  <button title="Expulsar" className="hidden text-dim hover:text-danger group-hover:block" onClick={(e) => (e.stopPropagation(), setKicking(id))}>
+                    <UserMinus className="size-4" />
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         ) : null,
+      )}
+      {kicking && (
+        <Modal title="Expulsar do servidor?" onClose={() => setKicking(null)}>
+          <p className="mb-4 text-sm text-dim">
+            <Name id={kicking} className="font-medium text-fg" /> sai de {server.name}. A pessoa pode voltar se tiver um convite.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button className={ghost} onClick={() => setKicking(null)}>
+              Cancelar
+            </button>
+            <button
+              className={`${button} bg-danger`}
+              onClick={async () => (await supabase.from("members").delete().match({ server_id: server.id, user_id: kicking }), setKicking(null))}
+            >
+              Expulsar
+            </button>
+          </div>
+        </Modal>
       )}
     </aside>
   );

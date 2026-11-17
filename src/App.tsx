@@ -177,6 +177,7 @@ function Main({ me }: { me: string }) {
               voiceRoom={voice?.id ?? null}
               onVoice={(c) => setVoice({ id: c.id, name: `${c.name} / ${server.name}` })}
               onGone={() => (loadServers(), pick("home"))}
+              onRenamed={loadServers}
             />
           ) : (
             <DmSidebar me={me} target={target} onTarget={setTarget} unread={unread} presence={presence} />
@@ -204,7 +205,7 @@ function Main({ me }: { me: string }) {
             </div>
           )}
         </div>
-        {server && <Members server={server} presence={presence} />}
+        {server && <Members server={server} me={me} presence={presence} />}
       </div>
     </ProfileProvider>
   );
