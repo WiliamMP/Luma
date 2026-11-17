@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Hash, Headphones, HeadphoneOff, LogOut, Mic, MicOff, PhoneOff, Plus, Settings, Trash2, Volume2 } from "lucide-react";
+import { ChevronDown, Hash, Headphones, HeadphoneOff, LogOut, Mic, MicOff, PhoneOff, Plus, ScreenShare, ScreenShareOff, Settings, Trash2, Volume2 } from "lucide-react";
 import { cn, errorText, putProfile, supabase, upload, useProfile, type Channel, type Server, type Target } from "@/lib";
 import { isMuted, toggleMute, type Unread } from "@/unread";
 import { Avatar, Badge, Modal, Name, button, ghost, input } from "./ui";
 
-export type Presence = Map<string, { voice: string | null }>;
+export type Presence = Map<string, { voice: string | null; screen: boolean }>;
 
 const row = (active: boolean) =>
   cn(
@@ -108,6 +108,7 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
                     <div key={id} className="flex items-center gap-2 py-1 pl-8 text-sm text-dim">
                       <Avatar id={id} size={22} />
                       <Name id={id} className="truncate" />
+                      {presence.get(id)?.screen && <span className="rounded bg-danger px-1 text-[10px] font-bold text-white">AO VIVO</span>}
                     </div>
                   ))}
               </div>
@@ -268,7 +269,7 @@ function NewDm({ onClose, onOpen }: { onClose: () => void; onOpen: (t: Target) =
 
 // ───────── bottom: me + voice controls ─────────
 
-export function UserPanel({ me, voiceName, voiceState, muted, deafened, onMute, onDeafen, onHangUp }: {
+export function UserPanel({ me, voiceName, voiceState, muted, deafened, onMute, onDeafen, onHangUp, sharing, onShare }: {
   me: string;
   voiceName: string | null;
   voiceState: { ready: boolean; error: string | null };
@@ -277,6 +278,8 @@ export function UserPanel({ me, voiceName, voiceState, muted, deafened, onMute, 
   onMute: () => void;
   onDeafen: () => void;
   onHangUp: () => void;
+  sharing: boolean;
+  onShare: () => void;
 }) {
   const [settings, setSettings] = useState(false);
   const icon = "grid size-8 place-items-center rounded-md text-dim hover:bg-raised hover:text-fg";
@@ -290,9 +293,14 @@ export function UserPanel({ me, voiceName, voiceState, muted, deafened, onMute, 
             </div>
             <div className="truncate text-xs text-dim">{voiceState.error ?? voiceName}</div>
           </div>
-          <button title="Desconectar" className={cn(icon, "hover:text-danger")} onClick={onHangUp}>
-            <PhoneOff className="size-4" />
-          </button>
+          <div className="flex">
+            <button title={sharing ? "Parar de compartilhar" : "Compartilhar tela"} className={cn(icon, sharing && "text-online")} onClick={onShare} disabled={!voiceState.ready}>
+              {sharing ? <ScreenShareOff className="size-4" /> : <ScreenShare className="size-4" />}
+            </button>
+            <button title="Desconectar" className={cn(icon, "hover:text-danger")} onClick={onHangUp}>
+              <PhoneOff className="size-4" />
+            </button>
+          </div>
         </div>
       )}
       <div className="flex items-center gap-2 px-2 py-2">

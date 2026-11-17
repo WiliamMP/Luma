@@ -10,6 +10,7 @@ import { Rail } from "./components/Rail";
 import { DmSidebar, ServerSidebar, UserPanel, type Presence } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
 import { Members } from "./components/Members";
+import { Stage } from "./components/Stage";
 import { WindowControls, dragWindow } from "./components/WindowControls";
 
 export default function App() {
@@ -126,8 +127,8 @@ function Main({ me }: { me: string }) {
   useEffect(() => {
     const ch = supabase.channel("online", { config: { presence: { key: me } } });
     ch.on("presence", { event: "sync" }, () => {
-      const state = ch.presenceState<{ voice: string | null }>();
-      setPresence(new Map(Object.entries(state).map(([id, metas]) => [id, { voice: metas[0]?.voice ?? null }])));
+      const state = ch.presenceState<{ voice: string | null; screen?: boolean }>();
+      setPresence(new Map(Object.entries(state).map(([id, metas]) => [id, { voice: metas[0]?.voice ?? null, screen: !!metas[0]?.screen }])));
     }).subscribe((s) => setSubscribed(s === "SUBSCRIBED"));
     online.current = ch;
     return () => void supabase.removeChannel(ch);
@@ -135,8 +136,14 @@ function Main({ me }: { me: string }) {
 
   // announce our voice room only once the signalling channel is up, so peers do not call us too early
   useEffect(() => {
-    if (subscribed) online.current?.track({ voice: voiceState.ready ? voice?.id ?? null : null });
-  }, [subscribed, voiceState.ready, voice?.id]);
+    const room = voiceState.ready ? voice?.id ?? null : null;
+    if (subscribed) online.current?.track({ voice: room, screen: !!room && !!voiceState.screen });
+  }, [subscribed, voiceState.ready, voice?.id, !!voiceState.screen]);
+
+  // screens shared in my voice room (mine included)
+  const shares = voice
+    ? peers.filter((id) => presence.get(id)?.screen).map((id) => ({ id, stream: id === me ? voiceState.screen : voiceState.remote.get(id) ?? null }))
+    : [];
 
   const server = servers.find((s) => s.id === selected);
   // the selected server vanished (left / deleted / kicked): go home
@@ -181,15 +188,20 @@ function Main({ me }: { me: string }) {
           onMute={() => setMuted(!muted)}
           onDeafen={() => setDeafened(!deafened)}
           onHangUp={() => setVoice(null)}
+          sharing={!!voiceState.screen}
+          onShare={() => (voiceState.screen ? voiceState.stopShare() : voiceState.share())}
         />
       </div>
-      {target ? (
-        <Chat key={target.id} me={me} target={target} focused={focused} onSeen={markRead} />
-      ) : (
-        <div className="grid flex-1 place-items-center bg-card text-sm text-dim">
-          {server ? "Este servidor não tem canais de texto." : "Escolha uma conversa ou comece uma nova."}
-        </div>
-      )}
+      <div className="flex min-w-0 flex-1 flex-col">
+        {shares.length > 0 && <Stage shares={shares} />}
+        {target ? (
+          <Chat key={target.id} me={me} target={target} focused={focused} onSeen={markRead} />
+        ) : (
+          <div className="grid flex-1 place-items-center bg-card text-sm text-dim">
+            {server ? "Este servidor não tem canais de texto." : "Escolha uma conversa ou comece uma nova."}
+          </div>
+        )}
+      </div>
       {server && <Members server={server} me={me} presence={presence} onTarget={toDm} />}
     </div>
   );

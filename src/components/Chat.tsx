@@ -115,7 +115,7 @@ export function Chat({ me, target, focused, onSeen }: {
   }
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col bg-card">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-card">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4 font-semibold">
         {target.kind === "channel" ? <Hash className="size-5 text-dim" /> : <AtSign className="size-5 text-dim" />}
         {target.name}

@@ -40,7 +40,7 @@ The Supabase URL and key are baked in at build time, so rebuild after changing `
 - Live updates: Supabase Realtime `postgres_changes` for messages, channels, members and DMs.
 - Online status and "who is in which voice channel": one Realtime presence channel (`online`).
 - Unread: a `reads` table keeps the last message id each user has seen per channel/DM; `unread_counts()` counts the rest. Windows notifications come from `tauri-plugin-notification`.
-- Voice: WebRTC peer-to-peer mesh (`src/voice.ts`), signalling over a private Realtime broadcast channel per voice room (only members of the server can join it). STUN, plus TURN relays from Cloudflare when the `turn` edge function is deployed (see below).
+- Voice and screen share: WebRTC peer-to-peer mesh (`src/voice.ts`), signalling over a private Realtime broadcast channel per voice room (only members of the server can join it). STUN, plus TURN relays from Cloudflare when the `turn` edge function is deployed (see below).
 
 ## Known limits
 

@@ -14,12 +14,15 @@ async function iceServers(): Promise<RTCIceServer[]> {
 }
 
 type Signal = { from: string; to: string; description?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit };
-type Peer = { pc: RTCPeerConnection; audio: HTMLAudioElement; queue: RTCIceCandidateInit[] };
+/** `video`: one sendrecv video transceiver per pair, negotiated up front and empty until someone shares a screen */
+type Peer = { pc: RTCPeerConnection; audio: HTMLAudioElement; queue: RTCIceCandidateInit[]; video: RTCRtpTransceiver | null };
 
 /**
  * Mesh voice chat: one RTCPeerConnection per other person in the room, signalling over a
  * Supabase broadcast channel. `peers` comes from presence (who is in this room right now).
  * Only the lower user id sends the offer for a pair, so two peers never offer at once.
+ * Screen share: the offer always carries an empty video transceiver, so starting/stopping a share
+ * is just replaceTrack on it, no renegotiation. Who is sharing is announced in presence (App).
  * ponytail: mesh = every peer uploads to every other, fine for ~8 people. An SFU (LiveKit) beyond that.
  * The channel is private: Realtime only lets members of the voice channel's server in (supabase/004_private_voice.sql).
  */
@@ -29,6 +32,10 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
   const stream = useRef<MediaStream | null>(null);
   const conns = useRef(new Map<string, Peer>());
   const chan = useRef<RealtimeChannel | null>(null);
+  const [screen, setScreen] = useState<MediaStream | null>(null);
+  const screenRef = useRef<MediaStream | null>(null);
+  /** peer id -> their video stream (frames only arrive while they share) */
+  const [remote, setRemote] = useState<Map<string, MediaStream>>(new Map());
   const ice = useRef<RTCConfiguration>({ iceServers: STUN });
   const deaf = useRef(deafened);
   deaf.current = deafened;
@@ -36,17 +43,26 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
   const send = (s: Omit<Signal, "from">) =>
     chan.current?.send({ type: "broadcast", event: "signal", payload: { ...s, from: me } });
 
-  function connect(id: string) {
+  function attachScreen(peer: Peer) {
+    peer.video?.sender.replaceTrack(screenRef.current?.getVideoTracks()[0] ?? null).catch(console.error);
+  }
+
+  function connect(id: string, offerer = false) {
     const existing = conns.current.get(id);
     if (existing) return existing;
     const pc = new RTCPeerConnection(ice.current);
     const audio = new Audio();
     audio.autoplay = true;
     audio.muted = deaf.current;
-    const peer: Peer = { pc, audio, queue: [] };
+    const peer: Peer = { pc, audio, queue: [], video: null };
     stream.current?.getTracks().forEach((t) => pc.addTrack(t, stream.current!));
+    if (offerer) {
+      peer.video = pc.addTransceiver("video", { direction: "sendrecv" });
+      attachScreen(peer);
+    }
     pc.ontrack = (e) => {
-      audio.srcObject = e.streams[0];
+      if (e.track.kind === "video") return setRemote((m) => new Map(m).set(id, new MediaStream([e.track])));
+      audio.srcObject = e.streams[0] ?? new MediaStream([e.track]);
       audio.play().catch(() => {});
     };
     pc.onicecandidate = (e) => e.candidate && send({ to: id, candidate: e.candidate.toJSON() });
@@ -63,6 +79,12 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
     p.pc.close();
     p.audio.srcObject = null;
     conns.current.delete(id);
+    setRemote((m) => {
+      if (!m.has(id)) return m;
+      const next = new Map(m);
+      next.delete(id);
+      return next;
+    });
   }
 
   async function onSignal(s: Signal) {
@@ -71,6 +93,9 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
     if (s.description) {
       await peer.pc.setRemoteDescription(s.description);
       if (s.description.type === "offer") {
+        // answer with sendrecv on the offered video transceiver so we can share our screen too
+        peer.video ??= peer.pc.getTransceivers().find((t) => t.receiver.track.kind === "video") ?? null;
+        if (peer.video) (peer.video.direction = "sendrecv"), attachScreen(peer);
         await peer.pc.setLocalDescription(await peer.pc.createAnswer());
         send({ to: s.from, description: peer.pc.localDescription!.toJSON() });
       }
@@ -105,6 +130,7 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
       cancelled = true;
       setReady(false);
       [...conns.current.keys()].forEach(drop);
+      stopShare();
       stream.current?.getTracks().forEach((t) => t.stop());
       stream.current = null;
       if (chan.current) supabase.removeChannel(chan.current);
@@ -120,7 +146,7 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
     for (const id of conns.current.keys()) if (!want.has(id)) drop(id);
     for (const id of want) {
       if (conns.current.has(id) || me > id) continue;
-      const { pc } = connect(id);
+      const { pc } = connect(id, true);
       pc.createOffer()
         .then((o) => pc.setLocalDescription(o))
         .then(() => send({ to: id, description: pc.localDescription!.toJSON() }))
@@ -136,5 +162,28 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
     conns.current.forEach((p) => (p.audio.muted = deafened));
   }, [deafened]);
 
-  return { ready, error };
+  async function share() {
+    let s: MediaStream;
+    try {
+      s = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: false });
+    } catch {
+      return; // picker cancelled
+    }
+    const track = s.getVideoTracks()[0];
+    track.contentHint = "detail"; // text stays sharp, frame rate drops first
+    track.onended = stopShare; // "stop sharing" from the system UI
+    screenRef.current = s;
+    setScreen(s);
+    conns.current.forEach(attachScreen);
+  }
+
+  function stopShare() {
+    if (!screenRef.current) return;
+    screenRef.current.getTracks().forEach((t) => t.stop());
+    screenRef.current = null;
+    setScreen(null);
+    conns.current.forEach(attachScreen);
+  }
+
+  return { ready, error, screen, remote, share, stopShare };
 }
