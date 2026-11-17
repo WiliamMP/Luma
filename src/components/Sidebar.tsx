@@ -5,7 +5,8 @@ import { useProfileCard } from "./Profile";
 import { isMuted, toggleMute, type Unread } from "@/unread";
 import { Avatar, Badge, Modal, Name, button, ghost, input } from "./ui";
 
-export type Presence = Map<string, { voice: string | null; screen: boolean }>;
+/** v: voice protocol version of that person's app (see VOICE_PROTOCOL) */
+export type Presence = Map<string, { voice: string | null; screen: boolean; v: number }>;
 
 const row = (active: boolean) =>
   cn(
@@ -44,7 +45,9 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
       setChannels(list);
       // keep the open channel if it still exists, else open the first text channel
       const first = list.find((c) => c.kind === "text");
-      if (first && !list.some((c) => c.id === current.current?.id)) onTarget({ kind: "channel", id: first.id, name: first.name });
+      const open = list.find((c) => c.id === current.current?.id);
+      if (!open && first) onTarget({ kind: "channel", id: first.id, name: first.name });
+      else if (open && open.name !== current.current?.name) onTarget({ kind: "channel", id: open.id, name: open.name }); // renamed
     };
     load();
     const sub = supabase

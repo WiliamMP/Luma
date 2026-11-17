@@ -3,7 +3,7 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import type { RealtimeChannel, Session } from "@supabase/supabase-js";
 import { configured, errorText, supabase, type Server, type Target } from "./lib";
-import { useVoice } from "./voice";
+import { useVoice, VOICE_PROTOCOL } from "./voice";
 import { useInbox } from "./unread";
 import { Auth } from "./components/Auth";
 import { Rail } from "./components/Rail";
@@ -95,7 +95,7 @@ function Main({ me }: { me: string }) {
   const [selected, setSelected] = useState("home");
   const [target, setTarget] = useState<Target | null>(null);
   const [presence, setPresence] = useState<Presence>(new Map());
-  const [voice, setVoice] = useState<{ id: string; name: string } | null>(null);
+  const [voice, setVoice] = useState<{ id: string; name: string; server: string } | null>(null);
   const [muted, setMuted] = useState(false);
   const [deafened, setDeafened] = useState(false);
   const online = useRef<RealtimeChannel | null>(null);
@@ -111,11 +111,22 @@ function Main({ me }: { me: string }) {
     return () => (window.removeEventListener("focus", on), window.removeEventListener("blur", off));
   }, []);
 
-  const peers = [...presence].filter(([, p]) => voice && p.voice === voice.id).map(([id]) => id);
+  // only peers speaking the same voice protocol: an older app version could not follow the signalling
+  const peers = [...presence].filter(([, p]) => voice && p.voice === voice.id && p.v === VOICE_PROTOCOL).map(([id]) => id);
   const voiceState = useVoice(me, voice?.id ?? null, peers, muted || deafened, deafened);
 
   const loadServers = () =>
-    supabase.from("servers").select("id, name, owner_id").order("created_at").then(({ data }) => setServers(data ?? []));
+    supabase
+      .from("servers")
+      .select("id, name, owner_id")
+      .order("created_at")
+      .then(({ data, error }) => {
+        if (error) return;
+        const list = data ?? [];
+        setServers(list);
+        // kicked from / left / deleted the server whose voice channel I am in: hang up
+        setVoice((v) => (v && !list.some((s) => s.id === v.server) ? null : v));
+      });
 
   useEffect(() => {
     loadServers();
@@ -128,8 +139,10 @@ function Main({ me }: { me: string }) {
   useEffect(() => {
     const ch = supabase.channel("online", { config: { presence: { key: me } } });
     ch.on("presence", { event: "sync" }, () => {
-      const state = ch.presenceState<{ voice: string | null; screen?: boolean }>();
-      setPresence(new Map(Object.entries(state).map(([id, metas]) => [id, { voice: metas[0]?.voice ?? null, screen: !!metas[0]?.screen }])));
+      const state = ch.presenceState<{ voice: string | null; screen?: boolean; v?: number }>();
+      setPresence(
+        new Map(Object.entries(state).map(([id, metas]) => [id, { voice: metas[0]?.voice ?? null, screen: !!metas[0]?.screen, v: metas[0]?.v ?? 1 }])),
+      );
     }).subscribe((s) => setSubscribed(s === "SUBSCRIBED"));
     online.current = ch;
     return () => void supabase.removeChannel(ch);
@@ -138,7 +151,7 @@ function Main({ me }: { me: string }) {
   // announce our voice room only once the signalling channel is up, so peers do not call us too early
   useEffect(() => {
     const room = voiceState.ready ? voice?.id ?? null : null;
-    if (subscribed) online.current?.track({ voice: room, screen: !!room && !!voiceState.screen });
+    if (subscribed) online.current?.track({ voice: room, screen: !!room && !!voiceState.screen, v: VOICE_PROTOCOL });
   }, [subscribed, voiceState.ready, voice?.id, !!voiceState.screen]);
 
   // screens shared in my voice room (mine included)
@@ -176,7 +189,7 @@ function Main({ me }: { me: string }) {
               presence={presence}
               voiceRoom={voice?.id ?? null}
               speaking={voiceState.speaking}
-              onVoice={(c) => setVoice({ id: c.id, name: `${c.name} / ${server.name}` })}
+              onVoice={(c) => setVoice({ id: c.id, name: `${c.name} / ${server.name}`, server: server.id })}
               onGone={() => (loadServers(), pick("home"))}
               onRenamed={loadServers}
             />
@@ -199,7 +212,7 @@ function Main({ me }: { me: string }) {
         <div className="flex min-w-0 flex-1 flex-col">
           {shares.length > 0 && <Stage shares={shares} />}
           {target ? (
-            <Chat key={target.id} me={me} target={target} focused={focused} onSeen={markRead} />
+            <Chat key={target.id} me={me} target={target} owner={target.kind === "channel" && server?.owner_id === me} focused={focused} onSeen={markRead} />
           ) : (
             <div className="grid flex-1 place-items-center bg-card text-sm text-dim">
               {server ? "Este servidor não tem canais de texto." : "Escolha uma conversa ou comece uma nova."}

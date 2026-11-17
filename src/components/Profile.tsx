@@ -75,9 +75,20 @@ function ProfileCard({ id, me, onClose, onDm, onEdit }: { id: string; me: string
   );
 }
 
+// the form starts from the saved profile, so it waits until that is loaded (an empty form would wipe status/bio on save)
 function ProfileDialog({ me, onClose }: { me: string; onClose: () => void }) {
   const p = useProfile(me);
-  const [form, setForm] = useState({ username: p?.username ?? "", status: p?.status ?? "", bio: p?.bio ?? "" });
+  return p ? (
+    <ProfileForm me={me} p={p} onClose={onClose} />
+  ) : (
+    <Modal title="Perfil e configurações" onClose={onClose}>
+      <p className="text-sm text-dim">Carregando…</p>
+    </Modal>
+  );
+}
+
+function ProfileForm({ me, p, onClose }: { me: string; p: Profile; onClose: () => void }) {
+  const [form, setForm] = useState({ username: p.username, status: p.status ?? "", bio: p.bio ?? "" });
   const [msg, setMsg] = useState<{ text: string; ok?: boolean } | null>(null);
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) => setForm({ ...form, [k]: e.target.value });
 
@@ -131,7 +142,7 @@ function MicPicker() {
   const [mic, setMic] = useMic();
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   useEffect(() => {
-    const load = () => navigator.mediaDevices.enumerateDevices().then((d) => setDevices(d.filter((x) => x.kind === "audioinput" && x.deviceId !== "default")));
+    const load = () => navigator.mediaDevices.enumerateDevices().then((d) => setDevices(d.filter((x) => x.kind === "audioinput" && x.deviceId && x.deviceId !== "default")));
     load();
     navigator.mediaDevices.addEventListener("devicechange", load);
     return () => navigator.mediaDevices.removeEventListener("devicechange", load);

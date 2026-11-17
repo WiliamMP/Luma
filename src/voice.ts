@@ -4,6 +4,12 @@ import { errorText, supabase } from "./lib";
 
 const STUN: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
+/**
+ * Announced in presence; peers only connect to peers with the same number. Bump it whenever the
+ * signalling changes in a way older versions cannot follow (2 = private channel + video transceiver).
+ */
+export const VOICE_PROTOCOL = 2;
+
 // chosen microphone (deviceId, "" = system default), saved on this device
 const MIC_KEY = "luma:mic";
 let mic = localStorage.getItem(MIC_KEY) ?? "";
@@ -54,7 +60,9 @@ type Peer = { pc: RTCPeerConnection; audio: HTMLAudioElement; queue: RTCIceCandi
  * The channel is private: Realtime only lets members of the voice channel's server in (supabase/004_private_voice.sql).
  */
 export function useVoice(me: string, room: string | null, peers: string[], muted: boolean, deafened: boolean) {
-  const [ready, setReady] = useState(false);
+  // ready is per room: right after switching rooms, the old room's "ready" must not count for the new one
+  const [readyRoom, setReadyRoom] = useState<string | null>(null);
+  const ready = room !== null && readyRoom === room;
   const [error, setError] = useState<string | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const conns = useRef(new Map<string, Peer>());
@@ -169,14 +177,15 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
           .on("broadcast", { event: "signal" }, ({ payload }) => onSignal(payload as Signal).catch(console.error))
           .subscribe((status) => {
             if (cancelled) return;
-            if (status === "SUBSCRIBED") setReady(true);
+            if (status === "SUBSCRIBED") (setError(null), setReadyRoom(room));
             else if (status === "CHANNEL_ERROR") setError("Sem permissão para entrar neste canal de voz.");
+            else if (status === "TIMED_OUT") setError("Tempo esgotado ao conectar na voz. Saia e entre de novo.");
           });
       })
       .catch((e) => setError(errorText(e)));
     return () => {
       cancelled = true;
-      setReady(false);
+      setReadyRoom(null);
       [...conns.current.keys()].forEach(drop);
       stopShare();
       meters.current.clear();
@@ -241,7 +250,7 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
         old.addTrack(track);
         meter(me, s);
       })
-      .catch((e) => setError(errorText(e)));
+      .catch(console.error); // the call goes on with the previous microphone
   }, [micId, ready]);
 
   useEffect(() => {

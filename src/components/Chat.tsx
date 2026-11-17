@@ -10,9 +10,11 @@ const PAGE = 100;
 const COLUMNS = "id, author_id, content, attachment_url, created_at, edited_at, reply_to, reactions";
 const QUICK_EMOJI = ["👍", "❤️", "😂", "😮", "😢", "🔥", "🎉", "👀"];
 
-export function Chat({ me, target, focused, onSeen }: {
+export function Chat({ me, target, owner, focused, onSeen }: {
   me: string;
   target: Target;
+  /** I own the server this channel belongs to: I can delete anyone's message */
+  owner: boolean;
   focused: boolean;
   onSeen: (target: string, lastId: number) => void;
 }) {
@@ -49,8 +51,9 @@ export function Chat({ me, target, focused, onSeen }: {
       .eq(col, target.id)
       .order("id", { ascending: false })
       .limit(PAGE)
-      .then(({ data }) => {
+      .then(({ data, error }) => {
         if (!live) return;
+        if (error) setErr(errorText(error));
         setMessages((data ?? []).reverse());
         setHasMore(data?.length === PAGE);
       });
@@ -130,7 +133,9 @@ export function Chat({ me, target, focused, onSeen }: {
     anchor.current = null;
   }, [messages.length]);
 
-  const replace = (m: Message) => setMessages((prev) => prev.map((p) => (p.id === m.id ? m : p)));
+  // merge: a Realtime UPDATE may leave out columns that did not change (large TOASTed content)
+  const replace = (m: Partial<Message> & { id: number }) =>
+    setMessages((prev) => prev.map((p) => (p.id === m.id ? { ...p, ...Object.fromEntries(Object.entries(m).filter(([, v]) => v !== undefined)) } : p)));
 
   /** the reply (if any) goes with the first thing sent after picking "Responder" */
   function takeReply() {
@@ -235,6 +240,7 @@ export function Chat({ me, target, focused, onSeen }: {
               parent={m.reply_to ? byId.get(m.reply_to) : undefined}
               grouped={!!grouped}
               me={me}
+              canDelete={m.author_id === me || owner}
               editing={editing === m.id}
               onReact={(emoji) => react(m, emoji)}
               onReply={() => startReply(m)}
@@ -300,11 +306,12 @@ function Typing({ ids }: { ids: string[] }) {
   return <div className="h-4 truncate px-1 pt-0.5 text-xs text-dim">{names}</div>;
 }
 
-function Row({ m, parent, grouped, me, editing, onReact, onReply, onEdit, onEditDone }: {
+function Row({ m, parent, grouped, me, canDelete, editing, onReact, onReply, onEdit, onEditDone }: {
   m: Message;
   parent: Message | undefined;
   grouped: boolean;
   me: string;
+  canDelete: boolean;
   editing: boolean;
   onReact: (emoji: string) => void;
   onReply: () => void;
@@ -318,7 +325,8 @@ function Row({ m, parent, grouped, me, editing, onReact, onReply, onEdit, onEdit
   const mine = m.author_id === me;
   const [picking, setPicking] = useState(false);
   const tool = "rounded p-1 text-dim hover:bg-raised hover:text-fg";
-  const reactions = Object.entries(m.reactions ?? {});
+  // defensive: only well-formed entries (emoji -> list of ids) are shown
+  const reactions = Object.entries(m.reactions && typeof m.reactions === "object" ? m.reactions : {}).filter(([, users]) => Array.isArray(users));
   return (
     <div
       id={`msg-${m.id}`}
@@ -401,7 +409,7 @@ function Row({ m, parent, grouped, me, editing, onReact, onReply, onEdit, onEdit
               <Pencil className="size-4" />
             </button>
           )}
-          {mine && (
+          {canDelete && (
             <button title="Apagar" className={`${tool} hover:text-danger`} onClick={() => supabase.from("messages").delete().eq("id", m.id)}>
               <Trash2 className="size-4" />
             </button>
@@ -442,7 +450,10 @@ function Quote({ id, loaded }: { id: number; loaded: Message | undefined }) {
     if (loaded) return;
     if (!parents.has(id)) parents.set(id, Promise.resolve(supabase.from("messages").select(COLUMNS).eq("id", id).maybeSingle()).then(({ data }) => data));
     let live = true;
-    parents.get(id)!.then((m) => live && setFetched(m));
+    parents.get(id)!.then((m) => {
+      if (!m) parents.delete(id); // not found / not visible / failed: ask again next time
+      if (live) setFetched(m);
+    });
     return () => void (live = false);
   }, [id, loaded]);
   const m = loaded ?? fetched;

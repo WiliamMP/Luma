@@ -10,6 +10,10 @@ Desktop chat app (Tauri + React + Supabase): servers, text and voice channels, s
 4. Supabase > **Authentication > Emails > Reset Password**: put the code in the message body, e.g. `Seu código do Luma: {{ .Token }}`. The app's "Esqueci minha senha" screen asks for that code (the default template only has a link, which has nowhere to land in a desktop app).
 5. Copy `.env.example` to `.env` and fill in the values from **Project Settings > API** (Project URL and the `anon` public key).
 
+## Updating an existing project
+
+Run any new `supabase/00X_*.sql` file in the SQL Editor **before** pushing the version tag: the auto-updater delivers the release to everyone, and a version that expects new columns shows empty chats until the SQL has run. The exception is `003_private_uploads.sql`, which turns stored URLs into paths and should run right after people have the version that reads paths (v0.3.1+).
+
 ## Voice through strict NAT (optional)
 
 Without TURN, voice only connects when both peers can reach each other directly (STUN). Some networks (mobile data, corporate, CGNAT) need a relay:

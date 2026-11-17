@@ -1,6 +1,7 @@
--- Profiles, message edits and replies, moderation. Run after 004_private_voice.sql:
--- Supabase > SQL Editor > paste > Run. Run it before installing the app version that uses it
--- (older versions ignore the new columns).
+-- Profiles, message edits, replies, reactions, typing indicator, owner moderation.
+-- Run after 004_private_voice.sql: Supabase > SQL Editor > paste > Run.
+-- Run it BEFORE publishing the app version that uses it: that version selects the new columns and
+-- shows nothing without them (older versions ignore the new columns).
 
 -- ───────── profiles: status line and "about me", live updates ─────────
 
@@ -59,7 +60,12 @@ create policy "typing send" on realtime.messages for insert to authenticated
 -- Kept on the message as {"👍": ["<user id>", ...]}, so they travel with the message's own
 -- Realtime UPDATE events (RLS-filtered) and need no extra table or subscription.
 
-alter table public.messages add column reactions jsonb not null default '{}';
+alter table public.messages add column reactions jsonb not null default '{}' check (jsonb_typeof(reactions) = 'object');
+
+-- clients insert only these columns; reactions/edited_at keep their defaults, so nobody can
+-- forge reactions or an "(editado)" mark (or plant a value that breaks other people's app)
+revoke insert on public.messages from authenticated, anon;
+grant insert (channel_id, dm_id, content, attachment_url, reply_to) on public.messages to authenticated;
 
 -- toggles my reaction; returns the message's new reactions
 create function public.toggle_reaction(mid bigint, emoji text) returns jsonb
@@ -70,7 +76,10 @@ declare
   users jsonb;
   result jsonb;
 begin
-  if emoji is null or char_length(emoji) not between 1 and 16 then raise exception 'invalid emoji'; end if;
+  -- same list as QUICK_EMOJI in src/components/Chat.tsx
+  if emoji is null or not emoji = any (array['👍', '❤️', '😂', '😮', '😢', '🔥', '🎉', '👀']) then
+    raise exception 'invalid emoji';
+  end if;
   select m.reactions into cur from public.messages m
     where m.id = mid and public.can_access(m.channel_id, m.dm_id) for update;
   if not found then raise exception 'message not found'; end if;
@@ -92,3 +101,11 @@ end;
 $$;
 revoke execute on function public.toggle_reaction from anon, public;
 grant execute on function public.toggle_reaction to authenticated;
+
+-- ───────── moderation ─────────
+-- the server owner can delete any message in the server's channels (authors still delete their own)
+
+create policy "owner deletes messages" on public.messages for delete to authenticated
+  using (channel_id is not null and exists (
+    select 1 from public.channels c where c.id = channel_id and public.is_owner(c.server_id)
+  ));
