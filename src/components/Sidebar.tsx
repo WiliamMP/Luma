@@ -4,7 +4,7 @@ import { cn, errorText, openChannel, openDm, supabase, upload, useProfile, type 
 import { useProfileCard } from "./Profile";
 import { useVolumes } from "@/voice";
 import { isMuted, toggleMute, type Unread } from "@/unread";
-import { Avatar, Badge, Modal, Name, button, dangerButton, ghost, input } from "./ui";
+import { Avatar, Badge, Modal, Name, UnreadBadge, button, dangerButton, ghost, input } from "./ui";
 
 /** v: voice protocol version of that person's app (see VOICE_PROTOCOL) */
 export type Presence = Map<string, { voice: string | null; screen: boolean; v: number; status: Status }>;
@@ -121,7 +121,7 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
                 >
                   {kind === "text" ? <Hash className="size-4 shrink-0" /> : <Volume2 className="size-4 shrink-0" />}
                   <span className={cn("flex-1 truncate", unread.has(c.id) && "font-semibold text-fg")}>{c.name}</span>
-                  <Badge n={unread.get(c.id)?.count ?? 0} />
+                  <UnreadBadge count={unread.get(c.id)?.count ?? 0} mentions={unread.get(c.id)?.mentions ?? 0} />
                   {owner && (
                     <>
                       <Pencil className="size-3.5 opacity-0 hover:text-fg group-hover:opacity-100" onClick={(e) => (e.stopPropagation(), setRenaming(c))} />

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { MessagesSquare, Plus } from "lucide-react";
 import { cn, errorText, supabase, useFileUrl, type Server } from "@/lib";
 import type { Unread } from "@/unread";
-import { Badge, Initials, Modal, button, input } from "./ui";
+import { Badge, Initials, Modal, UnreadBadge, button, input } from "./ui";
 
 /** left column: DMs button, one icon per server, add-server button */
 export function Rail({ servers, unread, selected, onSelect, onJoined }: {
@@ -13,9 +13,13 @@ export function Rail({ servers, unread, selected, onSelect, onJoined }: {
   onJoined: (id: string) => void;
 }) {
   const [adding, setAdding] = useState(false);
-  const count = (server: string | null) => [...unread.values()].reduce((n, u) => (u.server === server ? n + u.count : n), 0);
+  const sum = (server: string | null, key: "count" | "mentions") => [...unread.values()].reduce((n, u) => (u.server === server ? n + u[key] : n), 0);
+  const count = (server: string | null) => sum(server, "count");
   // badge sits outside the button so the button's overflow-hidden does not clip it
-  const badge = (n: number) => <Badge n={n} className="pointer-events-none absolute -right-1 -bottom-1 border-[3px] border-bg h-5.5! min-w-5.5!" />;
+  const where = "pointer-events-none absolute -right-1 -bottom-1 border-[3px] border-bg h-5.5! min-w-5.5!";
+  // DMs are always addressed to me: red count. Servers: red "@n" for mentions, grey count otherwise
+  const badge = (server: string | null) =>
+    server === null ? <Badge n={count(null)} className={where} /> : <UnreadBadge count={count(server)} mentions={sum(server, "mentions")} className={where} />;
   const item = (active: boolean) =>
     cn(
       "relative grid size-12 place-items-center overflow-hidden transition-all",
@@ -33,7 +37,7 @@ export function Rail({ servers, unread, selected, onSelect, onJoined }: {
           <MessagesSquare className="size-6" />
         </button>
         {pill(selected === "home", count(null) > 0)}
-        {badge(count(null))}
+        {badge(null)}
       </div>
       <div className="h-px w-8 bg-line" />
       {servers.map((s) => (
@@ -42,7 +46,7 @@ export function Rail({ servers, unread, selected, onSelect, onJoined }: {
             <ServerIcon server={s} />
           </button>
           {pill(selected === s.id, count(s.id) > 0)}
-          {badge(count(s.id))}
+          {badge(s.id)}
         </div>
       ))}
       <button title="Adicionar servidor" className={cn(item(false), "text-online hover:text-white")} onClick={() => setAdding(true)}>

@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { errorText, openChannel, supabase } from "./lib";
+import { errorText, openChannel, stored, supabase } from "./lib";
 
 const STUN: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
@@ -10,45 +10,16 @@ const STUN: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
  */
 export const VOICE_PROTOCOL = 2;
 
-// chosen microphone (deviceId, "" = system default), saved on this device
-const MIC_KEY = "luma:mic";
-let mic = localStorage.getItem(MIC_KEY) ?? "";
-const micListeners = new Set<() => void>();
+// chosen microphone (deviceId, "" = system default), saved on this device only (ids differ per computer)
+const micStore = stored("luma:mic", "");
+export const useMic = (): [string, (id: string) => void] => [micStore.use(), micStore.set];
 
-export function useMic(): [string, (id: string) => void] {
-  const value = useSyncExternalStore(
-    (l) => (micListeners.add(l), () => micListeners.delete(l)),
-    () => mic,
-  );
-  return [
-    value,
-    (id) => {
-      mic = id;
-      localStorage.setItem(MIC_KEY, id);
-      micListeners.forEach((l) => l());
-    },
-  ];
-}
-
-// volume per person (0..1, default 1), saved on this device
-const VOLUME_KEY = "luma:volumes";
-let volumes: Record<string, number> = JSON.parse(localStorage.getItem(VOLUME_KEY) ?? "{}");
-const volumeListeners = new Set<() => void>();
-const volumeOf = (id: string) => volumes[id] ?? 1;
+// volume per person (0..1, default 1); follows the account through settings.ts
+export const volumesStore = stored<Record<string, number>>("luma:volumes", {});
+const volumeOf = (id: string) => volumesStore.get()[id] ?? 1;
 
 export function useVolumes(): [Record<string, number>, (id: string, v: number) => void] {
-  const value = useSyncExternalStore(
-    (l) => (volumeListeners.add(l), () => volumeListeners.delete(l)),
-    () => volumes,
-  );
-  return [
-    value,
-    (id, v) => {
-      volumes = { ...volumes, [id]: v };
-      localStorage.setItem(VOLUME_KEY, JSON.stringify(volumes));
-      volumeListeners.forEach((l) => l());
-    },
-  ];
+  return [volumesStore.use(), (id, v) => volumesStore.set({ ...volumesStore.get(), [id]: v })];
 }
 
 /** short two-note chime, rising when someone joins the call and falling when someone leaves */

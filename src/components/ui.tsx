@@ -44,13 +44,20 @@ export function Name({ id, className }: { id: string; className?: string }) {
 }
 
 /** red unread pill */
-export function Badge({ n, className }: { n: number; className?: string }) {
+export function Badge({ n, className, prefix = "" }: { n: number; className?: string; prefix?: string }) {
   if (!n) return null;
   return (
     <span className={cn("grid h-4 min-w-4 place-items-center rounded-full bg-danger px-1 text-[11px] leading-none font-bold text-white", className)}>
+      {prefix}
       {n > 99 ? "99+" : n}
     </span>
   );
+}
+
+/** unread badge: red "@n" when someone mentioned me, otherwise a grey count */
+export function UnreadBadge({ count, mentions, className }: { count: number; mentions: number; className?: string }) {
+  if (mentions) return <Badge n={mentions} prefix="@" className={className} />;
+  return <Badge n={count} className={cn("bg-dim! text-bg!", className)} />;
 }
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {

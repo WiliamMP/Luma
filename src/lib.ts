@@ -82,6 +82,34 @@ export async function getProfile(id: string) {
 // ───────── misc ─────────
 
 /**
+ * A value kept in localStorage that components can watch. Values saved by older versions as a
+ * bare string (not JSON) are still read.
+ */
+export function stored<T>(key: string, initial: T) {
+  let value: T = initial;
+  const raw = localStorage.getItem(key);
+  if (raw !== null) {
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      value = raw as T;
+    }
+  }
+  const listeners = new Set<() => void>();
+  const subscribe = (l: () => void) => (listeners.add(l), () => void listeners.delete(l));
+  return {
+    get: () => value,
+    set(v: T) {
+      value = v;
+      localStorage.setItem(key, JSON.stringify(v));
+      listeners.forEach((l) => l());
+    },
+    subscribe,
+    use: () => useSyncExternalStore(subscribe, () => value),
+  };
+}
+
+/**
  * Opens a Realtime channel; returns the cleanup. supabase.channel(topic) hands back a channel with
  * the same topic that is still leaving, and subscribe() on it does nothing, so leaving a view and
  * coming back quickly (or React StrictMode in dev) left it without live updates. This removes the

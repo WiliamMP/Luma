@@ -2,12 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
 import { isTauri } from "@tauri-apps/api/core";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { useSyncExternalStore } from "react";
-import { getProfile, supabase, type Status, type Target } from "./lib";
+import { getProfile, stored, supabase, type Status, type Target } from "./lib";
 import { mentions } from "./format";
 
 /** target (channel id or dm id) -> unread count; server is null for DMs */
-export type Unread = Map<string, { server: string | null; count: number }>;
+export type Unread = Map<string, { server: string | null; count: number; mentions: number }>;
 
 type Incoming = { id: number; author_id: string; channel_id: string | null; dm_id: string | null; content: string };
 
@@ -26,8 +25,8 @@ export function useInbox(me: string, open: Target | null, focused: boolean) {
       clearTimeout(timer);
       timer = window.setTimeout(async () => {
         const { data } = await supabase.rpc("unread_counts");
-        const rows = (data ?? []) as { target: string; server_id: string | null; unread: number }[];
-        setUnread(new Map(rows.map((r) => [r.target, { server: r.server_id, count: Number(r.unread) }])));
+        const rows = (data ?? []) as { target: string; server_id: string | null; unread: number; mentions?: number }[];
+        setUnread(new Map(rows.map((r) => [r.target, { server: r.server_id, count: Number(r.unread), mentions: Number(r.mentions ?? 0) }])));
       }, 300);
     };
     load();
@@ -67,40 +66,23 @@ export function useInbox(me: string, open: Target | null, focused: boolean) {
   return { unread: shown, markRead };
 }
 
-// my chosen status, saved on this device; "Não perturbe" stops every notification
-const STATUS_KEY = "luma:status";
-let myStatus = (localStorage.getItem(STATUS_KEY) as Status | null) ?? "online";
-const statusListeners = new Set<() => void>();
+// my chosen status; "Não perturbe" stops every notification. Follows the account through settings.ts
+export const statusStore = stored<Status>("luma:status", "online");
+export const useMyStatus = (): [Status, (s: Status) => void] => [statusStore.use(), statusStore.set];
 
-export function useMyStatus(): [Status, (s: Status) => void] {
-  const value = useSyncExternalStore(
-    (l) => (statusListeners.add(l), () => statusListeners.delete(l)),
-    () => myStatus,
-  );
-  return [
-    value,
-    (s) => {
-      myStatus = s;
-      localStorage.setItem(STATUS_KEY, s);
-      statusListeners.forEach((l) => l());
-    },
-  ];
-}
-
-// ponytail: mute is kept per device in localStorage. Move it to a table if it should follow the account.
-const MUTED_KEY = "luma:muted-servers";
-const muted = new Set<string>(JSON.parse(localStorage.getItem(MUTED_KEY) ?? "[]"));
+// muted server ids; follows the account through settings.ts
+export const mutedStore = stored<string[]>("luma:muted-servers", []);
 
 /** muted servers keep their unread badges but send no Windows notification (except @mentions) */
-export const isMuted = (server: string) => muted.has(server);
+export const isMuted = (server: string) => mutedStore.get().includes(server);
 
 export function toggleMute(server: string) {
-  if (!muted.delete(server)) muted.add(server);
-  localStorage.setItem(MUTED_KEY, JSON.stringify([...muted]));
+  const list = mutedStore.get();
+  mutedStore.set(list.includes(server) ? list.filter((s) => s !== server) : [...list, server]);
 }
 
 async function notify(m: Incoming, me: string) {
-  if (myStatus === "dnd") return;
+  if (statusStore.get() === "dnd") return;
   // an @mention gets through a muted server
   const mentioned = mentions(m.content, (await getProfile(me))?.username);
   let title = "";

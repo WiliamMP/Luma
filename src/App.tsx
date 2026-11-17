@@ -13,6 +13,7 @@ import { Members } from "./components/Members";
 import { Stage } from "./components/Stage";
 import { ProfileProvider } from "./components/Profile";
 import { QuickSwitch } from "./components/QuickSwitch";
+import { syncSettings } from "./settings";
 import { WindowControls, dragWindow } from "./components/WindowControls";
 
 export default function App() {
@@ -155,6 +156,14 @@ function Main({ me }: { me: string }) {
         // kicked from / left / deleted the server whose voice channel I am in: hang up
         setVoice((v) => (v && !list.some((s) => s.id === v.server) ? null : v));
       });
+
+  useEffect(() => syncSettings(me), [me]);
+
+  // a server renamed / given an icon: refetch the list (the event only says something changed)
+  useEffect(() => {
+    const ch = supabase.channel("servers-live").on("postgres_changes", { event: "UPDATE", schema: "public", table: "servers" }, () => loadServers()).subscribe();
+    return () => void supabase.removeChannel(ch);
+  }, [me]);
 
   useEffect(() => {
     loadServers();
