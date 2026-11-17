@@ -1,6 +1,6 @@
 [package]
 name = "luma"
-version = "0.3.1"
+version = "0.4.0"
 description = "Chat with servers, channels, DMs and voice"
 authors = ["Wiliam Patricio"]
 edition = "2021"
