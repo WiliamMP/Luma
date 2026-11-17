@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { errorText, supabase } from "./lib";
+import { errorText, openChannel, supabase } from "./lib";
 
 const STUN: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
@@ -164,6 +164,7 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
   useEffect(() => {
     if (!room) return;
     let cancelled = false;
+    let closeChan = () => {};
     setError(null);
     usedMic.current = micId;
     Promise.all([navigator.mediaDevices.getUserMedia({ audio: micConstraints(micId) }), iceServers()])
@@ -172,15 +173,16 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
         stream.current = s;
         ice.current = { iceServers: servers };
         meter(me, s);
-        chan.current = supabase
-          .channel(`voice:${room}`, { config: { private: true } })
-          .on("broadcast", { event: "signal" }, ({ payload }) => onSignal(payload as Signal).catch(console.error))
-          .subscribe((status) => {
-            if (cancelled) return;
-            if (status === "SUBSCRIBED") (setError(null), setReadyRoom(room));
-            else if (status === "CHANNEL_ERROR") setError("Sem permissão para entrar neste canal de voz.");
-            else if (status === "TIMED_OUT") setError("Tempo esgotado ao conectar na voz. Saia e entre de novo.");
-          });
+        closeChan = openChannel(`voice:${room}`, { config: { private: true } }, (ch) => {
+          chan.current = ch
+            .on("broadcast", { event: "signal" }, ({ payload }) => onSignal(payload as Signal).catch(console.error))
+            .subscribe((status) => {
+              if (cancelled) return;
+              if (status === "SUBSCRIBED") (setError(null), setReadyRoom(room));
+              else if (status === "CHANNEL_ERROR") setError("Sem permissão para entrar neste canal de voz.");
+              else if (status === "TIMED_OUT") setError("Tempo esgotado ao conectar na voz. Saia e entre de novo.");
+            });
+        });
       })
       .catch((e) => setError(errorText(e)));
     return () => {
@@ -194,7 +196,7 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
       setSpeaking(new Set());
       stream.current?.getTracks().forEach((t) => t.stop());
       stream.current = null;
-      if (chan.current) supabase.removeChannel(chan.current);
+      closeChan();
       chan.current = null;
     };
   }, [room, me]);

@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type RealtimeChannel, type RealtimeChannelOptions } from "@supabase/supabase-js";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
@@ -75,6 +75,27 @@ export async function getProfile(id: string) {
 }
 
 // ───────── misc ─────────
+
+/**
+ * Opens a Realtime channel; returns the cleanup. supabase.channel(topic) hands back a channel with
+ * the same topic that is still leaving, and subscribe() on it does nothing, so leaving a view and
+ * coming back quickly (or React StrictMode in dev) left it without live updates. This removes the
+ * old one first. `setup` adds the listeners and calls subscribe().
+ */
+export function openChannel(topic: string, opts: RealtimeChannelOptions | undefined, setup: (ch: RealtimeChannel) => void) {
+  let ch: RealtimeChannel | null = null;
+  let closed = false;
+  const old = supabase.getChannels().find((c) => c.topic === `realtime:${topic}`);
+  Promise.resolve(old && supabase.removeChannel(old)).then(() => {
+    if (closed) return;
+    ch = supabase.channel(topic, opts);
+    setup(ch);
+  });
+  return () => {
+    closed = true;
+    if (ch) void supabase.removeChannel(ch);
+  };
+}
 
 /** opens (or creates) the DM with `other` */
 export async function openDm(other: string, name: string): Promise<Target> {

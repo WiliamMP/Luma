@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { AtSign, CornerUpLeft, FileText, Hash, Loader2, Pencil, PlusCircle, Reply, SmilePlus, Trash2, X } from "lucide-react";
-import { errorText, fileUrl, isImage, open, supabase, upload, useFileUrl, useProfile, type Message, type Target } from "@/lib";
+import { errorText, fileUrl, isImage, open, openChannel, supabase, upload, useFileUrl, useProfile, type Message, type Target } from "@/lib";
 import { Avatar, Name } from "./ui";
 import { useProfileCard } from "./Profile";
 
@@ -57,42 +57,43 @@ export function Chat({ me, target, owner, focused, onSeen }: {
         setMessages((data ?? []).reverse());
         setHasMore(data?.length === PAGE);
       });
-    const sub = supabase
-      .channel(`messages:${target.id}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `${col}=eq.${target.id}` }, ({ new: m }) => {
-        setMessages((prev) => (prev.some((p) => p.id === m.id) ? prev : [...prev, m as Message]));
-        setTyping((t) => (t.has(m.author_id) ? new Map([...t].filter(([id]) => id !== m.author_id)) : t));
-      })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages", filter: `${col}=eq.${target.id}` }, ({ new: m }) =>
-        replace(m as Message),
-      )
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "messages" }, ({ old }) =>
-        setMessages((prev) => prev.filter((p) => p.id !== old.id)),
-      )
-      .subscribe();
+    const close = openChannel(`messages:${target.id}`, undefined, (ch) =>
+      ch
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `${col}=eq.${target.id}` }, ({ new: m }) => {
+          setMessages((prev) => (prev.some((p) => p.id === m.id) ? prev : [...prev, m as Message]));
+          setTyping((t) => (t.has(m.author_id) ? new Map([...t].filter(([id]) => id !== m.author_id)) : t));
+        })
+        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages", filter: `${col}=eq.${target.id}` }, ({ new: m }) =>
+          replace(m as Message),
+        )
+        .on("postgres_changes", { event: "DELETE", schema: "public", table: "messages" }, ({ old }) =>
+          setMessages((prev) => prev.filter((p) => p.id !== old.id)),
+        )
+        .subscribe(),
+    );
     return () => {
       live = false;
-      void supabase.removeChannel(sub);
+      close();
     };
   }, [target.id]);
 
   // "X está digitando…": private broadcast per channel/DM (supabase/migrations/*_features.sql), each ping lasts 4 s
   useEffect(() => {
-    const ch = supabase
-      .channel(`typing:${target.id}`, { config: { private: true } })
-      .on("broadcast", { event: "typing" }, ({ payload }) => {
-        const id = (payload as { user: string }).user;
-        if (id !== me) setTyping((t) => new Map(t).set(id, Date.now() + 4000));
-      })
-      .subscribe();
-    typingChan.current = ch;
+    const close = openChannel(`typing:${target.id}`, { config: { private: true } }, (ch) => {
+      typingChan.current = ch
+        .on("broadcast", { event: "typing" }, ({ payload }) => {
+          const id = (payload as { user: string }).user;
+          if (id !== me) setTyping((t) => new Map(t).set(id, Date.now() + 4000));
+        })
+        .subscribe();
+    });
     const sweep = setInterval(() => {
       const now = Date.now();
       setTyping((t) => ([...t.values()].some((until) => until <= now) ? new Map([...t].filter(([, until]) => until > now)) : t));
     }, 1000);
     return () => {
       clearInterval(sweep);
-      supabase.removeChannel(ch);
+      close();
       typingChan.current = null;
       setTyping(new Map());
     };

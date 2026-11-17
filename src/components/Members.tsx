@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Crown, UserMinus, Volume2 } from "lucide-react";
-import { supabase, useProfile, type Server } from "@/lib";
+import { openChannel, supabase, useProfile, type Server } from "@/lib";
 import { Avatar, Modal, Name, button, ghost } from "./ui";
 import { useProfileCard } from "./Profile";
 import type { Presence } from "./Sidebar";
@@ -15,8 +15,9 @@ export function Members({ server, me, presence }: { server: Server; me: string; 
     const load = () =>
       supabase.from("members").select("user_id").eq("server_id", server.id).then(({ data }) => setIds((data ?? []).map((m) => m.user_id)));
     load();
-    const sub = supabase.channel(`members:${server.id}`).on("postgres_changes", { event: "*", schema: "public", table: "members" }, load).subscribe();
-    return () => void supabase.removeChannel(sub);
+    return openChannel(`members:${server.id}`, undefined, (ch) =>
+      ch.on("postgres_changes", { event: "*", schema: "public", table: "members" }, load).subscribe(),
+    );
   }, [server.id]);
 
   const groups = [

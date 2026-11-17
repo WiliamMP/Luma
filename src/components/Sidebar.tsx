@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Hash, Headphones, HeadphoneOff, Mic, Pencil, MicOff, PhoneOff, Plus, ScreenShare, ScreenShareOff, Settings, Trash2, Volume2 } from "lucide-react";
-import { cn, errorText, openDm, supabase, useProfile, type Channel, type Server, type Target } from "@/lib";
+import { cn, errorText, openChannel, openDm, supabase, useProfile, type Channel, type Server, type Target } from "@/lib";
 import { useProfileCard } from "./Profile";
 import { isMuted, toggleMute, type Unread } from "@/unread";
 import { Avatar, Badge, Modal, Name, button, ghost, input } from "./ui";
@@ -50,11 +50,9 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
       else if (open && open.name !== current.current?.name) onTarget({ kind: "channel", id: open.id, name: open.name }); // renamed
     };
     load();
-    const sub = supabase
-      .channel(`channels:${server.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "channels" }, load)
-      .subscribe();
-    return () => void supabase.removeChannel(sub);
+    return openChannel(`channels:${server.id}`, undefined, (ch) =>
+      ch.on("postgres_changes", { event: "*", schema: "public", table: "channels" }, load).subscribe(),
+    );
   }, [server.id]);
 
   const card = useProfileCard();
