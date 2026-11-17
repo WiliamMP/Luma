@@ -54,3 +54,41 @@ create policy "typing receive" on realtime.messages for select to authenticated
 
 create policy "typing send" on realtime.messages for insert to authenticated
   with check (realtime.messages.extension = 'broadcast' and public.can_type(realtime.topic()));
+
+-- ───────── reactions ─────────
+-- Kept on the message as {"👍": ["<user id>", ...]}, so they travel with the message's own
+-- Realtime UPDATE events (RLS-filtered) and need no extra table or subscription.
+
+alter table public.messages add column reactions jsonb not null default '{}';
+
+-- toggles my reaction; returns the message's new reactions
+create function public.toggle_reaction(mid bigint, emoji text) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare
+  uid text := auth.uid()::text;
+  cur jsonb;
+  users jsonb;
+  result jsonb;
+begin
+  if emoji is null or char_length(emoji) not between 1 and 16 then raise exception 'invalid emoji'; end if;
+  select m.reactions into cur from public.messages m
+    where m.id = mid and public.can_access(m.channel_id, m.dm_id) for update;
+  if not found then raise exception 'message not found'; end if;
+
+  users := coalesce(cur -> emoji, '[]'::jsonb);
+  if users ? uid then
+    users := users - uid;
+  else
+    if not (cur ? emoji) and (select count(*) from jsonb_object_keys(cur)) >= 20 then
+      raise exception 'too many reactions';
+    end if;
+    users := users || to_jsonb(uid);
+  end if;
+
+  result := case when jsonb_array_length(users) = 0 then cur - emoji else jsonb_set(cur, array[emoji], users) end;
+  update public.messages set reactions = result where id = mid;
+  return result;
+end;
+$$;
+revoke execute on function public.toggle_reaction from anon, public;
+grant execute on function public.toggle_reaction to authenticated;

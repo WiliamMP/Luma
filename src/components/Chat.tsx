@@ -1,13 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { AtSign, CornerUpLeft, FileText, Hash, Loader2, Pencil, PlusCircle, Reply, Trash2, X } from "lucide-react";
+import { AtSign, CornerUpLeft, FileText, Hash, Loader2, Pencil, PlusCircle, Reply, SmilePlus, Trash2, X } from "lucide-react";
 import { errorText, fileUrl, isImage, open, supabase, upload, useFileUrl, useProfile, type Message, type Target } from "@/lib";
 import { Avatar, Name } from "./ui";
 import { useProfileCard } from "./Profile";
 
 const GROUP_MS = 5 * 60 * 1000;
 const PAGE = 100;
-const COLUMNS = "id, author_id, content, attachment_url, created_at, edited_at, reply_to";
+const COLUMNS = "id, author_id, content, attachment_url, created_at, edited_at, reply_to, reactions";
+const QUICK_EMOJI = ["👍", "❤️", "😂", "😮", "😢", "🔥", "🎉", "👀"];
 
 export function Chat({ me, target, focused, onSeen }: {
   me: string;
@@ -171,6 +172,12 @@ export function Chat({ me, target, focused, onSeen }: {
     else replace(data);
   }
 
+  async function react(m: Message, emoji: string) {
+    const { data, error } = await supabase.rpc("toggle_reaction", { mid: m.id, emoji });
+    if (error) setErr(errorText(error));
+    else setMessages((prev) => prev.map((p) => (p.id === m.id ? { ...p, reactions: data } : p)));
+  }
+
   function startReply(m: Message) {
     setReplying(m);
     composer.current?.focus();
@@ -227,8 +234,9 @@ export function Chat({ me, target, focused, onSeen }: {
               m={m}
               parent={m.reply_to ? byId.get(m.reply_to) : undefined}
               grouped={!!grouped}
-              mine={m.author_id === me}
+              me={me}
               editing={editing === m.id}
+              onReact={(emoji) => react(m, emoji)}
               onReply={() => startReply(m)}
               onEdit={() => setEditing(m.id)}
               onEditDone={(content) => (content === null ? setEditing(null) : saveEdit(m, content))}
@@ -292,12 +300,13 @@ function Typing({ ids }: { ids: string[] }) {
   return <div className="h-4 truncate px-1 pt-0.5 text-xs text-dim">{names}</div>;
 }
 
-function Row({ m, parent, grouped, mine, editing, onReply, onEdit, onEditDone }: {
+function Row({ m, parent, grouped, me, editing, onReact, onReply, onEdit, onEditDone }: {
   m: Message;
   parent: Message | undefined;
   grouped: boolean;
-  mine: boolean;
+  me: string;
   editing: boolean;
+  onReact: (emoji: string) => void;
   onReply: () => void;
   onEdit: () => void;
   /** new text, or null when cancelled */
@@ -306,9 +315,16 @@ function Row({ m, parent, grouped, mine, editing, onReply, onEdit, onEditDone }:
   const author = useProfile(m.author_id);
   const card = useProfileCard();
   const time = new Date(m.created_at);
+  const mine = m.author_id === me;
+  const [picking, setPicking] = useState(false);
   const tool = "rounded p-1 text-dim hover:bg-raised hover:text-fg";
+  const reactions = Object.entries(m.reactions ?? {});
   return (
-    <div id={`msg-${m.id}`} className={`group relative px-4 hover:bg-raised/40 ${grouped ? "py-0.5" : "mt-3 py-0.5"}`}>
+    <div
+      id={`msg-${m.id}`}
+      className={`group relative px-4 hover:bg-raised/40 ${grouped ? "py-0.5" : "mt-3 py-0.5"}`}
+      onMouseLeave={() => setPicking(false)}
+    >
       {m.reply_to && <Quote id={m.reply_to} loaded={parent} />}
       <div className="flex gap-4">
         <div className="w-10 shrink-0">
@@ -346,10 +362,37 @@ function Row({ m, parent, grouped, mine, editing, onReply, onEdit, onEditDone }:
             )
           )}
           {m.attachment_url && <Attachment path={m.attachment_url} />}
+          {reactions.length > 0 && (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {reactions.map(([emoji, users]) => (
+                <button
+                  key={emoji}
+                  title={users.length === 1 ? "1 reação" : `${users.length} reações`}
+                  className={`flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-sm ${users.includes(me) ? "border-primary bg-primary/15" : "border-line bg-raised hover:border-dim"}`}
+                  onClick={() => onReact(emoji)}
+                >
+                  <span>{emoji}</span>
+                  <span className="text-xs text-dim">{users.length}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
+      {picking && (
+        <div className="absolute -top-12 right-4 z-10 flex gap-0.5 rounded-lg border border-line bg-card p-1 shadow-xl">
+          {QUICK_EMOJI.map((emoji) => (
+            <button key={emoji} className="rounded p-1 text-lg hover:bg-raised" onClick={() => (onReact(emoji), setPicking(false))}>
+              {emoji}
+            </button>
+          ))}
+        </div>
+      )}
       {!editing && (
         <div className="absolute -top-3 right-4 hidden gap-0.5 rounded border border-line bg-card p-0.5 shadow group-hover:flex">
+          <button title="Reagir" className={tool} onClick={() => setPicking(!picking)}>
+            <SmilePlus className="size-4" />
+          </button>
           <button title="Responder" className={tool} onClick={onReply}>
             <Reply className="size-4" />
           </button>

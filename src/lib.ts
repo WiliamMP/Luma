@@ -19,6 +19,8 @@ export type Message = {
   created_at: string;
   edited_at: string | null;
   reply_to: number | null;
+  /** emoji -> ids of who reacted */
+  reactions: Record<string, string[]>;
 };
 /** what the chat pane shows: a server text channel or a DM thread */
 export type Target = { kind: "channel" | "dm"; id: string; name: string };
