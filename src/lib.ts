@@ -28,7 +28,7 @@ export type Status = "online" | "away" | "dnd";
 export const STATUS_LABEL: Record<Status, string> = { online: "Online", away: "Ausente", dnd: "Não perturbe" };
 
 /** what the chat pane shows: a server text channel or a DM thread */
-export type Target = { kind: "channel" | "dm"; id: string; name: string };
+export type Target = { kind: "channel" | "dm"; id: string; name: string; group?: boolean };
 
 // ───────── profile cache: every avatar/name on screen reads from here, missing ids are fetched in one batch ─────────
 

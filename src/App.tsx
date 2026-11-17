@@ -286,7 +286,7 @@ function Main({ me }: { me: string }) {
         <div className="flex min-w-0 flex-1 flex-col">
           {shares.length + cams.length > 0 && <Stage me={me} shares={shares} cams={cams} />}
           {target ? (
-            <Chat key={target.id} me={me} target={target} moderator={target.kind === "channel" && moderator} focused={focused} onSeen={markRead} />
+            <Chat key={target.id} me={me} target={target} moderator={target.kind === "channel" && moderator} onLeft={() => setTarget(null)} focused={focused} onSeen={markRead} />
           ) : (
             <div className="grid flex-1 place-items-center bg-card text-sm text-dim">
               {server ? "Este servidor não tem canais de texto." : "Escolha uma conversa ou comece uma nova."}

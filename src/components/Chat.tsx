@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { AtSign, CornerUpLeft, FileText, Hash, Loader2, Pencil, Pin, PinOff, PlusCircle, Reply, Search, SmilePlus, Trash2, X } from "lucide-react";
+import { AtSign, Users, CornerUpLeft, FileText, Hash, Loader2, Pencil, Pin, PinOff, PlusCircle, Reply, Search, SmilePlus, Trash2, X } from "lucide-react";
 import { errorText, fileUrl, isImage, open, openChannel, supabase, upload, useFileUrl, useProfile, type Message, type Target } from "@/lib";
 import { Avatar, Name } from "./ui";
 import { format, mentions } from "@/format";
 import { EmojiPicker } from "./EmojiPicker";
+import { GroupHeader } from "./Group";
 import { useProfileCard } from "./Profile";
 
 const GROUP_MS = 5 * 60 * 1000;
@@ -28,11 +29,13 @@ const drafts = new Map<string, string>();
 
 const QUICK_EMOJI = ["👍", "❤️", "😂", "😮", "😢", "🔥", "🎉", "👀"];
 
-export function Chat({ me, target, moderator, focused, onSeen }: {
+export function Chat({ me, target, moderator, focused, onSeen, onLeft }: {
   me: string;
   target: Target;
   /** owner or moderator of the server this channel belongs to: can delete and pin anyone's message */
   moderator: boolean;
+  /** I left this group DM */
+  onLeft: () => void;
   focused: boolean;
   onSeen: (target: string, lastId: number) => void;
 }) {
@@ -369,8 +372,9 @@ export function Chat({ me, target, moderator, focused, onSeen }: {
         </div>
       )}
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4 font-semibold">
-        {target.kind === "channel" ? <Hash className="size-5 text-dim" /> : <AtSign className="size-5 text-dim" />}
+        {target.kind === "channel" ? <Hash className="size-5 text-dim" /> : target.group ? <Users className="size-5 text-dim" /> : <AtSign className="size-5 text-dim" />}
         {target.name}
+        {target.group && <GroupHeader dm={target.id} onLeft={onLeft} />}
         <span className="flex-1" />
         <button title="Mensagens fixadas" className="text-dim hover:text-fg" onClick={showPins}>
           <Pin className="size-4" />

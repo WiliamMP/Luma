@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Hash, Headphones, HeadphoneOff, Mic, Pencil, Video, VideoOff, MicOff, PhoneOff, Plus, ScreenShare, ScreenShareOff, Settings, Trash2, Volume2 } from "lucide-react";
+import { ChevronDown, Users, Hash, Headphones, HeadphoneOff, Mic, Pencil, Video, VideoOff, MicOff, PhoneOff, Plus, ScreenShare, ScreenShareOff, Settings, Trash2, Volume2 } from "lucide-react";
 import { cn, errorText, openChannel, openDm, supabase, upload, useProfile, type Channel, type Server, type Status, type Target } from "@/lib";
 import { useProfileCard } from "./Profile";
 import { useVolumes } from "@/voice";
+import { GroupIcon, NewGroup } from "./Group";
 import { isMuted, toggleMute, type Unread } from "@/unread";
 import { Avatar, Badge, Modal, Name, UnreadBadge, button, dangerButton, ghost, input } from "./ui";
 
@@ -346,15 +347,17 @@ export function DmSidebar({ me, target, onTarget, unread, presence }: {
   unread: Unread;
   presence: Presence;
 }) {
-  const [dms, setDms] = useState<{ id: string; other: string }[]>([]);
-  const [adding, setAdding] = useState(false);
+  /** 1:1 DMs have `other`, groups have `name` */
+  const [dms, setDms] = useState<{ id: string; other: string | null; name: string | null }[]>([]);
+  const [adding, setAdding] = useState<null | "dm" | "group">(null);
 
   useEffect(() => {
     const load = () =>
-      supabase.from("dms").select("id, user_a, user_b").order("created_at", { ascending: false }).then(({ data }) =>
-        setDms((data ?? []).map((d) => ({ id: d.id, other: d.user_a === me ? d.user_b : d.user_a }))),
+      supabase.from("dms").select("id, user_a, user_b, name").order("created_at", { ascending: false }).then(({ data }) =>
+        setDms((data ?? []).map((d) => ({ id: d.id, other: d.name ? null : d.user_a === me ? d.user_b : d.user_a, name: d.name }))),
       );
     load();
+    // being added to a group arrives as an UPDATE of its dms row (add_to_group touches it)
     const sub = supabase.channel("dms").on("postgres_changes", { event: "*", schema: "public", table: "dms" }, load).subscribe();
     return () => void supabase.removeChannel(sub);
   }, [me]);
@@ -363,14 +366,26 @@ export function DmSidebar({ me, target, onTarget, unread, presence }: {
     <>
       <div className="flex h-12 items-center border-b border-line px-4 font-semibold">Mensagens diretas</div>
       <div className="flex-1 space-y-0.5 overflow-y-auto p-2">
-        <button className={row(false)} onClick={() => setAdding(true)}>
+        <button className={row(false)} onClick={() => setAdding("dm")}>
           <Plus className="size-4" /> Nova conversa
         </button>
-        {dms.map((d) => (
-          <DmRow key={d.id} id={d.other} active={target?.id === d.id} online={presence.get(d.other)?.status ?? false} unread={unread.get(d.id)?.count ?? 0} onClick={(name) => onTarget({ kind: "dm", id: d.id, name })} />
-        ))}
+        <button className={row(false)} onClick={() => setAdding("group")}>
+          <Users className="size-4" /> Novo grupo
+        </button>
+        {dms.map((d) =>
+          d.other ? (
+            <DmRow key={d.id} id={d.other} active={target?.id === d.id} online={presence.get(d.other)?.status ?? false} unread={unread.get(d.id)?.count ?? 0} onClick={(name) => onTarget({ kind: "dm", id: d.id, name })} />
+          ) : (
+            <button key={d.id} className={row(target?.id === d.id)} onClick={() => onTarget({ kind: "dm", id: d.id, name: d.name ?? "", group: true })}>
+              <GroupIcon />
+              <span className={cn("flex-1 truncate", unread.has(d.id) && "font-semibold text-fg")}>{d.name}</span>
+              <Badge n={unread.get(d.id)?.count ?? 0} />
+            </button>
+          ),
+        )}
       </div>
-      {adding && <NewDm onClose={() => setAdding(false)} onOpen={(t) => (setAdding(false), onTarget(t))} />}
+      {adding === "dm" && <NewDm onClose={() => setAdding(null)} onOpen={(t) => (setAdding(null), onTarget(t))} />}
+      {adding === "group" && <NewGroup onClose={() => setAdding(null)} onOpen={(t) => (setAdding(null), onTarget(t))} />}
     </>
   );
 }

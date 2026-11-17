@@ -30,10 +30,11 @@ function Switcher({ me, servers, onClose, onPick }: { me: string; servers: Serve
     const names = new Map(servers.map((s) => [s.id, s.name]));
     Promise.all([
       supabase.from("channels").select("id, name, server_id").eq("kind", "text").order("name"),
-      supabase.from("dms").select("id, user_a, user_b").order("created_at", { ascending: false }),
+      supabase.from("dms").select("id, user_a, user_b, name").order("created_at", { ascending: false }),
     ]).then(async ([{ data: channels }, { data: dms }]) => {
       const dmItems = await Promise.all(
         (dms ?? []).map(async (d) => {
+          if (d.name) return { target: { kind: "dm", id: d.id, name: d.name, group: true }, server: null, sub: "Grupo" } as Item;
           const p = await getProfile(d.user_a === me ? d.user_b : d.user_a);
           const name = p?.username ?? "…";
           return { target: { kind: "dm", id: d.id, name }, server: null, sub: "Mensagem direta" } as Item;
