@@ -1,19 +1,31 @@
 import { useEffect, useState } from "react";
-import { Crown, UserMinus, Volume2 } from "lucide-react";
+import { Crown, Shield, ShieldOff, UserMinus, Volume2 } from "lucide-react";
 import { openChannel, supabase, useProfile, type Server } from "@/lib";
 import { Avatar, Modal, Name, dangerButton, ghost } from "./ui";
 import { useProfileCard } from "./Profile";
 import type { Presence } from "./Sidebar";
 
-export function Members({ server, me, presence }: { server: Server; me: string; presence: Presence }) {
+export function Members({ server, me, moderator, presence }: { server: Server; me: string; moderator: boolean; presence: Presence }) {
   const card = useProfileCard();
-  const [ids, setIds] = useState<string[]>([]);
+  /** member id -> role */
+  const [roles, setRoles] = useState<Map<string, "member" | "mod">>(new Map());
+  const ids = [...roles.keys()];
   const [kicking, setKicking] = useState<string | null>(null);
   const owner = server.owner_id === me;
+  // the owner removes anyone; a moderator removes regular members (the database enforces the same)
+  const canKick = (id: string) => id !== me && id !== server.owner_id && (owner || (moderator && roles.get(id) === "member"));
+
+  async function setRole(id: string, role: "member" | "mod") {
+    await supabase.from("members").update({ role }).match({ server_id: server.id, user_id: id });
+  }
 
   useEffect(() => {
     const load = () =>
-      supabase.from("members").select("user_id").eq("server_id", server.id).then(({ data }) => setIds((data ?? []).map((m) => m.user_id)));
+      supabase
+        .from("members")
+        .select("user_id, role")
+        .eq("server_id", server.id)
+        .then(({ data }) => setRoles(new Map((data ?? []).map((m) => [m.user_id, m.role ?? "member"]))));
     load();
     return openChannel(`members:${server.id}`, undefined, (ch) =>
       ch.on("postgres_changes", { event: "*", schema: "public", table: "members" }, load).subscribe(),
@@ -47,8 +59,18 @@ export function Members({ server, me, presence }: { server: Server; me: string; 
                   <Status id={id} />
                 </div>
                 {presence.get(id)?.voice && <Volume2 className="size-3.5 text-online" />}
-                {server.owner_id === id && <Crown className="size-3.5 text-[#f5a524]" />}
+                {server.owner_id === id && <Crown className="size-3.5 text-[#f5a524]" aria-label="Dono" />}
+                {roles.get(id) === "mod" && server.owner_id !== id && <Shield className="size-3.5 text-primary" aria-label="Moderador" />}
                 {owner && id !== me && (
+                  <button
+                    title={roles.get(id) === "mod" ? "Remover moderador" : "Tornar moderador"}
+                    className="hidden text-dim hover:text-fg group-hover:block"
+                    onClick={(e) => (e.stopPropagation(), setRole(id, roles.get(id) === "mod" ? "member" : "mod"))}
+                  >
+                    {roles.get(id) === "mod" ? <ShieldOff className="size-4" /> : <Shield className="size-4" />}
+                  </button>
+                )}
+                {canKick(id) && (
                   <button title="Expulsar" className="hidden text-dim hover:text-danger group-hover:block" onClick={(e) => (e.stopPropagation(), setKicking(id))}>
                     <UserMinus className="size-4" />
                   </button>

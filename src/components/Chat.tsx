@@ -28,11 +28,11 @@ const drafts = new Map<string, string>();
 
 const QUICK_EMOJI = ["👍", "❤️", "😂", "😮", "😢", "🔥", "🎉", "👀"];
 
-export function Chat({ me, target, owner, focused, onSeen }: {
+export function Chat({ me, target, moderator, focused, onSeen }: {
   me: string;
   target: Target;
-  /** I own the server this channel belongs to: I can delete anyone's message */
-  owner: boolean;
+  /** owner or moderator of the server this channel belongs to: can delete and pin anyone's message */
+  moderator: boolean;
   focused: boolean;
   onSeen: (target: string, lastId: number) => void;
 }) {
@@ -427,8 +427,8 @@ export function Chat({ me, target, owner, focused, onSeen }: {
                 grouped={!!grouped}
                 me={me}
                 myName={myName}
-                canDelete={m.author_id === me || owner}
-              canPin={target.kind === "dm" || owner}
+                canDelete={m.author_id === me || moderator}
+              canPin={target.kind === "dm" || moderator}
               onPin={() => pin(m)}
                 editing={editing === m.id}
                 onReact={(emoji) => react(m, emoji)}

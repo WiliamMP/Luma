@@ -17,7 +17,7 @@ const row = (active: boolean) =>
 
 // ───────── server: channels ─────────
 
-export function ServerSidebar({ server, me, target, onTarget, unread, presence, voiceRoom, speaking, onVoice, onGone, onRenamed }: {
+export function ServerSidebar({ server, me, target, onTarget, unread, presence, voiceRoom, speaking, onVoice, onGone, onRenamed, moderator }: {
   server: Server;
   me: string;
   target: Target | null;
@@ -30,6 +30,8 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
   onVoice: (c: Channel) => void;
   onGone: () => void;
   onRenamed: () => void;
+  /** owner or moderator: manages channels */
+  moderator: boolean;
 }) {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [menu, setMenu] = useState(false);
@@ -81,7 +83,7 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
         {menu && (
           <div className="absolute inset-x-2 top-13 z-10 rounded-lg border border-line bg-bg p-1.5 text-sm shadow-xl" onMouseLeave={() => setMenu(false)}>
             <MenuItem onClick={() => (setDialog("invite"), setMenu(false))}>Convidar pessoas</MenuItem>
-            {owner && <MenuItem onClick={() => (setDialog("channel"), setMenu(false))}>Criar canal</MenuItem>}
+            {moderator && <MenuItem onClick={() => (setDialog("channel"), setMenu(false))}>Criar canal</MenuItem>}
             {owner && <MenuItem onClick={() => (setDialog("rename"), setMenu(false))}>Renomear servidor</MenuItem>}
             {owner && (
               <MenuItem onClick={() => (iconInput.current?.click(), setMenu(false))}>
@@ -107,7 +109,7 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
           <div key={kind}>
             <div className="flex items-center justify-between px-1 pb-1 text-xs font-semibold uppercase text-dim">
               {kind === "text" ? "Canais de texto" : "Canais de voz"}
-              {owner && (
+              {moderator && (
                 <button title="Criar canal" className="hover:text-fg" onClick={() => setDialog("channel")}>
                   <Plus className="size-4" />
                 </button>
@@ -122,7 +124,7 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
                   {kind === "text" ? <Hash className="size-4 shrink-0" /> : <Volume2 className="size-4 shrink-0" />}
                   <span className={cn("flex-1 truncate", unread.has(c.id) && "font-semibold text-fg")}>{c.name}</span>
                   <UnreadBadge count={unread.get(c.id)?.count ?? 0} mentions={unread.get(c.id)?.mentions ?? 0} />
-                  {owner && (
+                  {moderator && (
                     <>
                       <Pencil className="size-3.5 opacity-0 hover:text-fg group-hover:opacity-100" onClick={(e) => (e.stopPropagation(), setRenaming(c))} />
                       <Trash2 className="size-3.5 opacity-0 hover:text-danger group-hover:opacity-100" onClick={(e) => (e.stopPropagation(), remove(c))} />

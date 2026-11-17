@@ -156,18 +156,21 @@ function Main({ me }: { me: string }) {
   const peers = [...presence].filter(([, p]) => voice && p.voice === voice.id && p.v === VOICE_PROTOCOL).map(([id]) => id);
   const voiceState = useVoice(me, voice?.id ?? null, peers, muted || deafened, deafened);
 
+  /** servers where I am a moderator (the owner is checked against owner_id) */
+  const [mods, setMods] = useState<Set<string>>(new Set());
+
   const loadServers = () =>
-    supabase
-      .from("servers")
-      .select("id, name, owner_id, icon_url")
-      .order("created_at")
-      .then(({ data, error }) => {
-        if (error) return;
-        const list = data ?? [];
-        setServers(list);
-        // kicked from / left / deleted the server whose voice channel I am in: hang up
-        setVoice((v) => (v && !list.some((s) => s.id === v.server) ? null : v));
-      });
+    Promise.all([
+      supabase.from("servers").select("id, name, owner_id, icon_url").order("created_at"),
+      supabase.from("members").select("server_id").eq("user_id", me).eq("role", "mod"),
+    ]).then(([{ data, error }, { data: modRows }]) => {
+      if (error) return;
+      const list = data ?? [];
+      setServers(list);
+      setMods(new Set((modRows ?? []).map((r) => r.server_id)));
+      // kicked from / left / deleted the server whose voice channel I am in: hang up
+      setVoice((v) => (v && !list.some((s) => s.id === v.server) ? null : v));
+    });
 
   useEffect(() => syncSettings(me), [me]);
 
@@ -222,6 +225,8 @@ function Main({ me }: { me: string }) {
     : [];
 
   const server = servers.find((s) => s.id === selected);
+  /** owner or moderator of the open server */
+  const moderator = !!server && (server.owner_id === me || mods.has(server.id));
   // the selected server vanished (left / deleted / kicked): go home
   useEffect(() => {
     if (selected !== "home" && servers.length && !server) (setSelected("home"), setTarget(null));
@@ -257,6 +262,7 @@ function Main({ me }: { me: string }) {
               onVoice={(c) => setVoice({ id: c.id, name: `${c.name} / ${server.name}`, server: server.id })}
               onGone={() => (loadServers(), pick("home"))}
               onRenamed={loadServers}
+              moderator={moderator}
             />
           ) : (
             <DmSidebar me={me} target={target} onTarget={setTarget} unread={unread} presence={presence} />
@@ -280,14 +286,14 @@ function Main({ me }: { me: string }) {
         <div className="flex min-w-0 flex-1 flex-col">
           {shares.length + cams.length > 0 && <Stage me={me} shares={shares} cams={cams} />}
           {target ? (
-            <Chat key={target.id} me={me} target={target} owner={target.kind === "channel" && server?.owner_id === me} focused={focused} onSeen={markRead} />
+            <Chat key={target.id} me={me} target={target} moderator={target.kind === "channel" && moderator} focused={focused} onSeen={markRead} />
           ) : (
             <div className="grid flex-1 place-items-center bg-card text-sm text-dim">
               {server ? "Este servidor não tem canais de texto." : "Escolha uma conversa ou comece uma nova."}
             </div>
           )}
         </div>
-        {server && <Members server={server} me={me} presence={presence} />}
+        {server && <Members server={server} me={me} moderator={moderator} presence={presence} />}
       </div>
     </ProfileProvider>
   );
