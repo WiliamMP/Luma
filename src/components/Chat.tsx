@@ -271,13 +271,18 @@ export function Chat({ me, target, owner, focused, onSeen }: {
     return id;
   }
 
+  /** messages on their way to the server: arrow-up waits for them, or it would edit the one before */
+  const sending = useRef(0);
+
   async function send(content: string, attachment_url: string | null = null, reply_to: number | null = null) {
     setErr(null);
+    sending.current++;
     const { data, error } = await supabase
       .from("messages")
       .insert({ [col]: target.id, content, attachment_url, reply_to })
       .select(COLUMNS)
       .single();
+    sending.current--;
     if (error) return setErr(errorText(error));
     setMessages((prev) => (prev.some((p) => p.id === data.id) ? prev : [...prev, data]));
   }
@@ -328,6 +333,7 @@ export function Chat({ me, target, owner, focused, onSeen }: {
     if (e.key === "Escape" && replying) return setReplying(null);
     // arrow up in an empty box edits my last text message
     if (e.key === "ArrowUp" && !text) {
+      if (sending.current) return e.preventDefault();
       const last = [...messages].reverse().find((m) => m.author_id === me && m.content);
       if (last) (e.preventDefault(), setEditing(last.id));
       return;

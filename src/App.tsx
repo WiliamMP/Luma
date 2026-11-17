@@ -96,6 +96,18 @@ function UpdateBar() {
   );
 }
 
+type Meta = { voice: string | null; screen?: boolean; v?: number; status?: Status };
+
+/**
+ * One person can have Luma open in several places (one presence entry each). Voice comes from the
+ * one that is in a call; the status from any that is not idle ("away" only when all of them are).
+ */
+function merge(metas: Meta[]) {
+  const call = metas.find((m) => m.voice) ?? metas[0];
+  const status: Status = metas.map((m) => m.status ?? "online").find((s) => s !== "away") ?? "away";
+  return { voice: call?.voice ?? null, screen: !!call?.screen, v: call?.v ?? 1, status };
+}
+
 function Setup() {
   return (
     <div className="grid h-full place-items-center p-8 text-center">
@@ -176,15 +188,8 @@ function Main({ me }: { me: string }) {
   useEffect(() => {
     const ch = supabase.channel("online", { config: { presence: { key: me } } });
     ch.on("presence", { event: "sync" }, () => {
-      const state = ch.presenceState<{ voice: string | null; screen?: boolean; v?: number; status?: Status }>();
-      setPresence(
-        new Map(
-          Object.entries(state).map(([id, metas]) => [
-            id,
-            { voice: metas[0]?.voice ?? null, screen: !!metas[0]?.screen, v: metas[0]?.v ?? 1, status: metas[0]?.status ?? "online" },
-          ]),
-        ),
-      );
+      const state = ch.presenceState<Meta>();
+      setPresence(new Map(Object.entries(state).map(([id, metas]) => [id, merge(metas)])));
     }).subscribe((s) => setSubscribed(s === "SUBSCRIBED"));
     online.current = ch;
     return () => void supabase.removeChannel(ch);
