@@ -4,6 +4,7 @@ import { AtSign, CornerUpLeft, FileText, Hash, Loader2, Pencil, Pin, PinOff, Plu
 import { errorText, fileUrl, isImage, open, openChannel, supabase, upload, useFileUrl, useProfile, type Message, type Target } from "@/lib";
 import { Avatar, Name } from "./ui";
 import { format, mentions } from "@/format";
+import { EmojiPicker } from "./EmojiPicker";
 import { useProfileCard } from "./Profile";
 
 const GROUP_MS = 5 * 60 * 1000;
@@ -149,6 +150,14 @@ export function Chat({ me, target, owner, focused, onSeen }: {
         const names = (data ?? []).map((p) => p.username as string);
         setSuggest(names.length ? { names, pick: 0 } : null);
       });
+  }
+
+  function insertAtCaret(piece: string) {
+    const el = composer.current;
+    const start = el?.selectionStart ?? text.length;
+    const end = el?.selectionEnd ?? text.length;
+    setText(text.slice(0, start) + piece + text.slice(end));
+    requestAnimationFrame(() => (el?.focus(), el?.setSelectionRange(start + piece.length, start + piece.length)));
   }
 
   function insertMention(name: string) {
@@ -470,6 +479,7 @@ export function Chat({ me, target, owner, focused, onSeen }: {
             }}
             autoFocus
           />
+          <EmojiPicker onPick={insertAtCaret} />
         </div>
         <Typing ids={[...typing.keys()]} />
       </div>
