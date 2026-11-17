@@ -2,8 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { errorText, supabase } from "./lib";
 
-// ponytail: STUN only, so peers behind strict/symmetric NAT may not connect. Add a TURN server here if that happens.
-const ICE: RTCConfiguration = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+const STUN: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
+
+/**
+ * TURN relays audio for peers behind strict NAT. Short-lived credentials come from the
+ * `turn` edge function (supabase/functions/turn); if it is not deployed or fails, STUN only.
+ */
+async function iceServers(): Promise<RTCIceServer[]> {
+  const { data, error } = await supabase.functions.invoke<{ iceServers: RTCIceServer[] }>("turn");
+  return error || !data?.iceServers ? STUN : [...STUN, ...data.iceServers];
+}
 
 type Signal = { from: string; to: string; description?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit };
 type Peer = { pc: RTCPeerConnection; audio: HTMLAudioElement; queue: RTCIceCandidateInit[] };
@@ -21,6 +29,7 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
   const stream = useRef<MediaStream | null>(null);
   const conns = useRef(new Map<string, Peer>());
   const chan = useRef<RealtimeChannel | null>(null);
+  const ice = useRef<RTCConfiguration>({ iceServers: STUN });
   const deaf = useRef(deafened);
   deaf.current = deafened;
 
@@ -30,7 +39,7 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
   function connect(id: string) {
     const existing = conns.current.get(id);
     if (existing) return existing;
-    const pc = new RTCPeerConnection(ICE);
+    const pc = new RTCPeerConnection(ice.current);
     const audio = new Audio();
     audio.autoplay = true;
     audio.muted = deaf.current;
@@ -77,11 +86,11 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
     if (!room) return;
     let cancelled = false;
     setError(null);
-    navigator.mediaDevices
-      .getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
-      .then((s) => {
+    Promise.all([navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }), iceServers()])
+      .then(([s, servers]) => {
         if (cancelled) return s.getTracks().forEach((t) => t.stop());
         stream.current = s;
+        ice.current = { iceServers: servers };
         chan.current = supabase
           .channel(`voice:${room}`)
           .on("broadcast", { event: "signal" }, ({ payload }) => onSignal(payload as Signal).catch(console.error))
