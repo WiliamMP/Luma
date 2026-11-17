@@ -90,6 +90,9 @@ async function notify(m: Incoming, me: string) {
     const { data } = await supabase.from("channels").select("name, server_id, servers(name)").eq("id", m.channel_id).maybeSingle();
     if (data && isMuted(data.server_id) && !mentioned) return;
     if (data) title = ` em #${data.name} (${(data.servers as unknown as { name: string } | null)?.name ?? ""})`;
+  } else if (m.dm_id) {
+    const { data } = await supabase.from("dms").select("name").eq("id", m.dm_id).maybeSingle();
+    if (data?.name) title = ` em ${data.name}`; // group DM
   }
   const author = await getProfile(m.author_id);
   title = (author?.username ?? "Nova mensagem") + (mentioned ? " mencionou você" : "") + title;

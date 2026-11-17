@@ -54,46 +54,73 @@ language sql stable security definer set search_path = '' as $$
   );
 $$;
 
--- new group with me and the given usernames (unknown names are skipped); returns its id
+-- a username -> user id; usernames are unique only case-sensitively, so an exact match wins
+create function public.find_user(who text) returns uuid
+language sql stable security definer set search_path = '' as $$
+  select p.id from public.profiles p where lower(p.username) = lower(trim(who)) order by (p.username = trim(who)) desc limit 1;
+$$;
+
+-- can I put this person in a group? Only people I already share a server or a 1:1 DM with,
+-- so strangers cannot be dropped into groups by username
+create function public.knows(uid uuid) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select uid = auth.uid()
+      or exists (select 1 from public.members a join public.members b on b.server_id = a.server_id where a.user_id = auth.uid() and b.user_id = uid)
+      or exists (select 1 from public.dms d where (d.user_a = auth.uid() and d.user_b = uid) or (d.user_b = auth.uid() and d.user_a = uid));
+$$;
+
+-- new group with me and the given usernames (unknown names and people I do not know are skipped); returns its id
 create function public.create_group(name text, usernames text[]) returns uuid
 language plpgsql security definer set search_path = '' as $$
 declare did uuid;
 begin
   if coalesce(array_length(usernames, 1), 0) > 9 then raise exception 'Um grupo tem no máximo 10 pessoas'; end if;
+  if trim(create_group.name) = '' then raise exception 'Dê um nome ao grupo'; end if;
   insert into public.dms (name) values (trim(create_group.name)) returning id into did;
   insert into public.dm_members (dm_id, user_id)
     select did, auth.uid()
     union
-    select did, p.id from public.profiles p where lower(p.username) = any (select lower(u) from unnest(usernames) u);
+    select did, u.id from (select public.find_user(x) as id from unnest(usernames) x) u
+    where u.id is not null and public.knows(u.id);
   if (select count(*) from public.dm_members where dm_id = did) < 2 then
-    raise exception 'Nenhum dos nomes foi encontrado';
+    raise exception 'Ninguém encontrado: só dá para adicionar quem está num servidor ou numa DM com você';
   end if;
   return did;
 end;
 $$;
 
--- someone in the group adds another person by username
--- (parameter `who`, not `username`: that would be ambiguous with profiles.username below)
+-- someone in the group adds another person they know, by username
+-- (parameter `who`, not `username`: that would be ambiguous with profiles.username)
 create function public.add_to_group(did uuid, who text) returns void
 language plpgsql security definer set search_path = '' as $$
 declare uid uuid;
 begin
-  if not exists (select 1 from public.dms d where d.id = did and d.name is not null) or not public.in_dm(did) then
-    raise exception 'Grupo não encontrado';
+  -- the lock makes two adds at the same time count one after the other
+  perform 1 from public.dms d where d.id = did and d.name is not null for update;
+  if not found or not public.in_dm(did) then raise exception 'Grupo não encontrado'; end if;
+  uid := public.find_user(who);
+  if uid is null or not public.knows(uid) then
+    raise exception 'Usuário não encontrado (só dá para adicionar quem está num servidor ou numa DM com você)';
   end if;
+  if exists (select 1 from public.dm_members where dm_id = did and user_id = uid) then return; end if;
   if (select count(*) from public.dm_members where dm_id = did) >= 10 then raise exception 'Um grupo tem no máximo 10 pessoas'; end if;
-  select p.id into uid from public.profiles p where lower(p.username) = lower(trim(who));
-  if uid is null then raise exception 'Usuário não encontrado'; end if;
-  insert into public.dm_members (dm_id, user_id) values (did, uid) on conflict do nothing;
+  insert into public.dm_members (dm_id, user_id) values (did, uid);
   update public.dms set name = name where id = did; -- live update for everyone in the group, the new person included
 end;
 $$;
 
+-- leave; the last one out deletes the group with its messages
 create function public.leave_group(did uuid) returns void
-language sql security definer set search_path = '' as $$
+language plpgsql security definer set search_path = '' as $$
+begin
   delete from public.dm_members where dm_id = did and user_id = auth.uid();
-  update public.dms set name = name where id = did and name is not null; -- the others see me leave
+  if not exists (select 1 from public.dm_members where dm_id = did) then
+    delete from public.dms where id = did and name is not null;
+  else
+    update public.dms set name = name where id = did and name is not null; -- the others see me leave
+  end if;
+end;
 $$;
 
-revoke execute on function public.create_group, public.add_to_group, public.leave_group from anon, public;
+revoke execute on function public.create_group, public.add_to_group, public.leave_group, public.find_user, public.knows from anon, public;
 grant execute on function public.create_group, public.add_to_group, public.leave_group to authenticated;

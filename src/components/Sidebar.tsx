@@ -70,9 +70,7 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
   const card = useProfileCard();
   const inVoice = (cid: string) => [...presence].filter(([, p]) => p.voice === cid).map(([id]) => id);
 
-  async function remove(c: Channel) {
-    await supabase.from("channels").delete().eq("id", c.id);
-  }
+  const [removing, setRemoving] = useState<Channel | null>(null);
 
   return (
     <>
@@ -128,7 +126,9 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
                   {moderator && (
                     <>
                       <Pencil className="size-3.5 opacity-0 hover:text-fg group-hover:opacity-100" onClick={(e) => (e.stopPropagation(), setRenaming(c))} />
-                      <Trash2 className="size-3.5 opacity-0 hover:text-danger group-hover:opacity-100" onClick={(e) => (e.stopPropagation(), remove(c))} />
+                      {owner && (
+                        <Trash2 className="size-3.5 opacity-0 hover:text-danger group-hover:opacity-100" onClick={(e) => (e.stopPropagation(), setRemoving(c))} />
+                      )}
                     </>
                   )}
                 </button>
@@ -154,6 +154,22 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
           </div>
         ))}
       </div>
+      {removing && (
+        <Modal title={`Apagar ${removing.kind === "text" ? "#" : ""}${removing.name}?`} onClose={() => setRemoving(null)}>
+          <p className="mb-4 text-sm text-dim">{removing.kind === "text" ? "Todas as mensagens do canal serão apagadas. " : ""}Não dá para desfazer.</p>
+          <div className="flex justify-end gap-2">
+            <button className={ghost} onClick={() => setRemoving(null)}>
+              Cancelar
+            </button>
+            <button
+              className={dangerButton}
+              onClick={async () => (await supabase.from("channels").delete().eq("id", removing.id), setRemoving(null))}
+            >
+              Apagar
+            </button>
+          </div>
+        </Modal>
+      )}
       {volumeMenu && <VolumeMenu {...volumeMenu} onClose={() => setVolumeMenu(null)} />}
       <input
         ref={iconInput}

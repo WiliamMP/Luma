@@ -1,6 +1,7 @@
--- Moderators: the owner can make members moderators. A moderator deletes and pins any message in
--- the server's channels, manages channels and kicks regular members. Only the owner renames the
--- server, changes its icon and invite code, deletes it, and promotes or demotes moderators.
+-- Moderators: the owner can make members moderators. A moderator pins messages, deletes messages
+-- of regular members, creates and renames channels and kicks regular members. Only the owner
+-- deletes channels (that deletes their history), renames the server, changes its icon and invite
+-- code, deletes it, and promotes or demotes moderators.
 
 alter table public.members add column role text not null default 'member' check (role in ('member', 'mod'));
 
@@ -30,20 +31,58 @@ create policy "leave server" on public.members for delete to authenticated using
   )
 );
 
--- channels: moderators manage them too
+-- channels: moderators create and rename them; deleting (and its history) stays with the owner
 drop policy "owner adds channels" on public.channels;
 drop policy "owner edits channels" on public.channels;
-drop policy "owner deletes channels" on public.channels;
 create policy "mods add channels" on public.channels for insert to authenticated with check (public.is_mod(server_id));
 create policy "mods edit channels" on public.channels for update to authenticated using (public.is_mod(server_id));
-create policy "mods delete channels" on public.channels for delete to authenticated using (public.is_mod(server_id));
 
--- messages: moderators delete anyone's message in the server's channels
+-- messages in the server's channels: the owner deletes any; a moderator deletes those of anyone who
+-- is neither the owner nor a moderator (people already kicked included)
 drop policy "owner deletes messages" on public.messages;
 create policy "mods delete messages" on public.messages for delete to authenticated
   using (channel_id is not null and exists (
-    select 1 from public.channels c where c.id = channel_id and public.is_mod(c.server_id)
+    select 1 from public.channels c
+    where c.id = messages.channel_id
+      and (
+        public.is_owner(c.server_id)
+        or (
+          public.is_mod(c.server_id)
+          and not exists (select 1 from public.servers s where s.id = c.server_id and s.owner_id = messages.author_id)
+          and not exists (select 1 from public.members am where am.server_id = c.server_id and am.user_id = messages.author_id and am.role = 'mod')
+        )
+      )
   ));
+
+-- editing or deleting my own messages needs access to where they are: someone kicked from a
+-- server (or who left a group) can no longer rewrite what they said there
+drop policy "edit own messages" on public.messages;
+create policy "edit own messages" on public.messages for update to authenticated
+  using (author_id = auth.uid() and public.can_access(channel_id, dm_id))
+  with check (author_id = auth.uid());
+drop policy "delete own messages" on public.messages;
+create policy "delete own messages" on public.messages for delete to authenticated
+  using (author_id = auth.uid() and public.can_access(channel_id, dm_id));
+
+-- members leaves Realtime: DELETE events skip RLS, so every client was told who was kicked from
+-- which server. A change in members now "touches" the servers row instead, whose UPDATE events
+-- only reach that server's members.
+-- ponytail: someone kicked gets no event (they are no longer a member); their app notices on its next load
+alter publication supabase_realtime drop table public.members;
+
+create function public.touch_server() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if tg_op = 'DELETE' then
+    update public.servers set name = name where id = old.server_id;
+  else
+    update public.servers set name = name where id = new.server_id;
+  end if;
+  return null;
+end;
+$$;
+create trigger members_touch_server after insert or update or delete on public.members
+  for each row execute function public.touch_server();
 
 -- pins: moderators pin in channels (either person still pins in a DM)
 create or replace function public.toggle_pin(mid bigint) returns timestamptz

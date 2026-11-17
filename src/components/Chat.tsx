@@ -208,6 +208,14 @@ export function Chat({ me, target, moderator, focused, onSeen, onLeft }: {
     setSearch({ title: data?.length ? "Mensagens fixadas" : "Nenhuma mensagem fixada", results: data ?? [] });
   }
 
+  // RLS turns a delete that is not allowed into "0 rows", not an error: ask for the row back to tell
+  async function remove(m: Message) {
+    const { data, error } = await supabase.from("messages").delete().eq("id", m.id).select("id");
+    if (error) setErr(errorText(error));
+    else if (!data?.length) setErr("Sem permissão para apagar essa mensagem (é do dono ou de um moderador).");
+    else setMessages((prev) => prev.filter((p) => p.id !== m.id));
+  }
+
   async function pin(m: Message) {
     const { data, error } = await supabase.rpc("toggle_pin", { mid: m.id });
     if (error) setErr(errorText(error));
@@ -433,6 +441,7 @@ export function Chat({ me, target, moderator, focused, onSeen, onLeft }: {
                 myName={myName}
                 canDelete={m.author_id === me || moderator}
               canPin={target.kind === "dm" || moderator}
+              onDelete={() => remove(m)}
               onPin={() => pin(m)}
                 editing={editing === m.id}
                 onReact={(emoji) => react(m, emoji)}
@@ -477,7 +486,7 @@ export function Chat({ me, target, moderator, focused, onSeen, onLeft }: {
             ref={composer}
             rows={1}
             className="max-h-48 flex-1 resize-none bg-transparent text-[15px] outline-none placeholder:text-dim [field-sizing:content]"
-            placeholder={`Conversar em ${target.kind === "channel" ? "#" : "@"}${target.name}`}
+            placeholder={`Conversar em ${target.kind === "channel" ? "#" : target.group ? "" : "@"}${target.name}`}
             value={text}
             maxLength={4000}
             onChange={(e) => onType(e.target.value, e.target.selectionStart)}
@@ -515,7 +524,7 @@ function Typing({ ids }: { ids: string[] }) {
   return <div className="h-4 truncate px-1 pt-0.5 text-xs text-dim">{names}</div>;
 }
 
-function Row({ m, parent, grouped, me, myName, canDelete, canPin, onPin, editing, onReact, onReply, onEdit, onEditDone }: {
+function Row({ m, parent, grouped, me, myName, canDelete, canPin, onPin, onDelete, editing, onReact, onReply, onEdit, onEditDone }: {
   m: Message;
   parent: Message | undefined;
   grouped: boolean;
@@ -524,6 +533,7 @@ function Row({ m, parent, grouped, me, myName, canDelete, canPin, onPin, editing
   canDelete: boolean;
   canPin: boolean;
   onPin: () => void;
+  onDelete: () => void;
   editing: boolean;
   onReact: (emoji: string) => void;
   onReply: () => void;
@@ -629,7 +639,7 @@ function Row({ m, parent, grouped, me, myName, canDelete, canPin, onPin, editing
             </button>
           )}
           {canDelete && (
-            <button title="Apagar" className={`${tool} hover:text-danger`} onClick={() => supabase.from("messages").delete().eq("id", m.id)}>
+            <button title="Apagar" className={`${tool} hover:text-danger`} onClick={onDelete}>
               <Trash2 className="size-4" />
             </button>
           )}

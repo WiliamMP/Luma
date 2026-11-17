@@ -27,8 +27,9 @@ export function Members({ server, me, moderator, presence }: { server: Server; m
         .eq("server_id", server.id)
         .then(({ data }) => setRoles(new Map((data ?? []).map((m) => [m.user_id, m.role ?? "member"]))));
     load();
+    // members is not in Realtime (DELETE events would reach everyone); a trigger touches the servers row instead
     return openChannel(`members:${server.id}`, undefined, (ch) =>
-      ch.on("postgres_changes", { event: "*", schema: "public", table: "members" }, load).subscribe(),
+      ch.on("postgres_changes", { event: "UPDATE", schema: "public", table: "servers", filter: `id=eq.${server.id}` }, load).subscribe(),
     );
   }, [server.id]);
 

@@ -83,7 +83,7 @@ function AddPerson({ dm, onClose }: { dm: string; onClose: () => void }) {
         className="flex gap-2"
         onSubmit={async (e) => {
           e.preventDefault();
-          const { error } = await supabase.rpc("add_to_group", { did: dm, who: who.trim() });
+          const { error } = await supabase.rpc("add_to_group", { did: dm, who: who.trim().replace(/^@/, "") });
           if (error) setErr(errorText(error));
           else onClose();
         }}
@@ -113,7 +113,7 @@ export function NewGroup({ onClose, onOpen }: { onClose: () => void; onOpen: (t:
           onOpen({ kind: "dm", id: data as string, name: name.trim(), group: true });
         }}
       >
-        <input className={input} placeholder="Nome do grupo" value={name} onChange={(e) => setName(e.target.value)} maxLength={64} required autoFocus />
+        <input className={input} placeholder="Nome do grupo" value={name} onChange={(e) => setName(e.target.value)} maxLength={64} required pattern=".*\S.*" title="Dê um nome ao grupo" autoFocus />
         <input className={input} placeholder="Pessoas: nomes de usuário separados por vírgula" value={people} onChange={(e) => setPeople(e.target.value)} required />
         <div className="flex justify-end">
           <button className={button}>Criar grupo</button>

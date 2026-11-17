@@ -156,6 +156,8 @@ function Main({ me }: { me: string }) {
   const peers = [...presence].filter(([, p]) => voice && p.voice === voice.id && p.v === VOICE_PROTOCOL).map(([id]) => id);
   const voiceState = useVoice(me, voice?.id ?? null, peers, muted || deafened, deafened);
 
+  // after leaving a group the DM list remounts: I no longer receive that group's events to notice it myself
+  const [dmsVersion, setDmsVersion] = useState(0);
   /** servers where I am a moderator (the owner is checked against owner_id) */
   const [mods, setMods] = useState<Set<string>>(new Set());
 
@@ -174,17 +176,17 @@ function Main({ me }: { me: string }) {
 
   useEffect(() => syncSettings(me), [me]);
 
-  // a server renamed / given an icon: refetch the list (the event only says something changed)
-  useEffect(() => {
-    const ch = supabase.channel("servers-live").on("postgres_changes", { event: "UPDATE", schema: "public", table: "servers" }, () => loadServers()).subscribe();
-    return () => void supabase.removeChannel(ch);
-  }, [me]);
-
+  // refetch the rail when a server of mine changes: renamed, new icon, someone joined or left or a role
+  // changed (a trigger on members touches the servers row), or deleted. The event only says "something
+  // changed". ponytail: being kicked sends me nothing (I can no longer see the row); the next load notices.
   useEffect(() => {
     loadServers();
-    // joined, left, kicked or server deleted: refresh the rail
-    const sub = supabase.channel("my-servers").on("postgres_changes", { event: "*", schema: "public", table: "members" }, loadServers).subscribe();
-    return () => void supabase.removeChannel(sub);
+    const ch = supabase
+      .channel("servers-live")
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "servers" }, () => loadServers())
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "servers" }, () => loadServers())
+      .subscribe();
+    return () => void supabase.removeChannel(ch);
   }, [me]);
 
   // who is online, and which voice channel each person is in
@@ -265,7 +267,7 @@ function Main({ me }: { me: string }) {
               moderator={moderator}
             />
           ) : (
-            <DmSidebar me={me} target={target} onTarget={setTarget} unread={unread} presence={presence} />
+            <DmSidebar key={dmsVersion} me={me} target={target} onTarget={setTarget} unread={unread} presence={presence} />
           )}
           <UserPanel
             me={me}
@@ -286,7 +288,7 @@ function Main({ me }: { me: string }) {
         <div className="flex min-w-0 flex-1 flex-col">
           {shares.length + cams.length > 0 && <Stage me={me} shares={shares} cams={cams} />}
           {target ? (
-            <Chat key={target.id} me={me} target={target} moderator={target.kind === "channel" && moderator} onLeft={() => setTarget(null)} focused={focused} onSeen={markRead} />
+            <Chat key={target.id} me={me} target={target} moderator={target.kind === "channel" && moderator} onLeft={() => (setTarget(null), setDmsVersion((v) => v + 1))} focused={focused} onSeen={markRead} />
           ) : (
             <div className="grid flex-1 place-items-center bg-card text-sm text-dim">
               {server ? "Este servidor não tem canais de texto." : "Escolha uma conversa ou comece uma nova."}
