@@ -21,6 +21,7 @@ export function Chat({ me, target, focused, onSeen }: {
   const [hasMore, setHasMore] = useState(false);
   const [replying, setReplying] = useState<Message | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
+  const [dragging, setDragging] = useState(false);
   const list = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
   const loadingOlder = useRef(false);
@@ -159,7 +160,22 @@ export function Chat({ me, target, focused, onSeen }: {
   const byId = new Map(messages.map((m) => [m.id, m]));
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-card">
+    <div
+      className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-card"
+      onDragOver={(e) => e.dataTransfer.types.includes("Files") && (e.preventDefault(), setDragging(true))}
+      onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setDragging(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragging(false);
+        if (e.dataTransfer.files.length) attach([...e.dataTransfer.files]);
+      }}
+    >
+      {dragging && (
+        <div className="pointer-events-none absolute inset-3 z-20 grid place-items-center rounded-xl border-2 border-dashed border-primary bg-bg/80 text-lg font-semibold">
+          Solte para enviar em {target.kind === "channel" ? "#" : "@"}
+          {target.name}
+        </div>
+      )}
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4 font-semibold">
         {target.kind === "channel" ? <Hash className="size-5 text-dim" /> : <AtSign className="size-5 text-dim" />}
         {target.name}
