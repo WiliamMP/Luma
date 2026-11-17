@@ -34,8 +34,21 @@ jobs:
         with:
           version: latest
 
+      # passwords with @ # / ? etc. must be percent-encoded in a URL; accept the string as pasted
+      - name: Encode the password in the connection string
+        run: |
+          url=$(python3 -c '
+          import os, urllib.parse
+          scheme, rest = os.environ["DB"].strip().split("://", 1)
+          cred, host = rest.rsplit("@", 1)
+          user, pw = cred.split(":", 1)
+          print(f"{scheme}://{user}:{urllib.parse.quote(urllib.parse.unquote(pw), safe=str())}@{host}")
+          ')
+          echo "::add-mask::$url"
+          echo "DB_URL=$url" >> "$GITHUB_ENV"
+
       - name: Mark hand-run migrations as applied
         if: inputs.baseline
-        run: supabase migration repair --status applied 20261117000000 20261117000001 20261117000002 20261117000003 20261117000004 --remote="$DB" --yes
+        run: supabase migration repair --status applied 20261117000000 20261117000001 20261117000002 20261117000003 20261117000004 --remote="$DB_URL" --yes
 
-      - run: supabase db push --remote="$DB" --yes
+      - run: supabase db push --remote="$DB_URL" --yes
