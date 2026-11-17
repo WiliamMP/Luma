@@ -9,7 +9,7 @@ export const supabase = createClient(url || "http://localhost", key || "missing"
 
 export type Profile = { id: string; username: string; avatar_url: string | null; status: string; bio: string };
 export const PROFILE_COLUMNS = "id, username, avatar_url, status, bio";
-export type Server = { id: string; name: string; owner_id: string };
+export type Server = { id: string; name: string; owner_id: string; icon_url: string | null };
 export type Channel = { id: string; server_id: string; name: string; kind: "text" | "voice" };
 export type Message = {
   id: number;
@@ -21,6 +21,7 @@ export type Message = {
   reply_to: number | null;
   /** emoji -> ids of who reacted */
   reactions: Record<string, string[]>;
+  pinned_at: string | null;
 };
 /** presence status; "away" is also set automatically after 10 min with the window in the background */
 export type Status = "online" | "away" | "dnd";

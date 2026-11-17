@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { MessagesSquare, Plus } from "lucide-react";
-import { cn, errorText, supabase, type Server } from "@/lib";
+import { cn, errorText, supabase, useFileUrl, type Server } from "@/lib";
 import type { Unread } from "@/unread";
 import { Badge, Initials, Modal, button, input } from "./ui";
 
@@ -39,7 +39,7 @@ export function Rail({ servers, unread, selected, onSelect, onJoined }: {
       {servers.map((s) => (
         <div key={s.id} className="relative">
           <button title={s.name} className={item(selected === s.id)} onClick={() => onSelect(s.id)}>
-            <Initials name={s.name} size={48} className="rounded-none!" />
+            <ServerIcon server={s} />
           </button>
           {pill(selected === s.id, count(s.id) > 0)}
           {badge(count(s.id))}
@@ -84,4 +84,9 @@ function AddServer({ onClose, onDone }: { onClose: () => void; onDone: (id: stri
       {err && <p className="mt-3 text-sm text-danger">{err}</p>}
     </Modal>
   );
+}
+
+function ServerIcon({ server }: { server: Server }) {
+  const url = useFileUrl(server.icon_url);
+  return <Initials name={server.name} url={url} size={48} className="rounded-none!" />;
 }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Hash, Headphones, HeadphoneOff, Mic, Pencil, MicOff, PhoneOff, Plus, ScreenShare, ScreenShareOff, Settings, Trash2, Volume2 } from "lucide-react";
-import { cn, errorText, openChannel, openDm, supabase, useProfile, type Channel, type Server, type Status, type Target } from "@/lib";
+import { cn, errorText, openChannel, openDm, supabase, upload, useProfile, type Channel, type Server, type Status, type Target } from "@/lib";
 import { useProfileCard } from "./Profile";
 import { useVolumes } from "@/voice";
 import { isMuted, toggleMute, type Unread } from "@/unread";
@@ -35,6 +35,12 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
   const [menu, setMenu] = useState(false);
   const [dialog, setDialog] = useState<null | "invite" | "channel" | "delete" | "rename">(null);
   const [renaming, setRenaming] = useState<Channel | null>(null);
+  const iconInput = useRef<HTMLInputElement>(null);
+
+  async function setIcon(path: string | null) {
+    const { error } = await supabase.from("servers").update({ icon_url: path }).eq("id", server.id);
+    if (!error) onRenamed(); // reloads the server list, which carries the icon
+  }
   /** right-click on someone in a voice channel: their volume slider at the mouse */
   const [volumeMenu, setVolumeMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const owner = server.owner_id === me;
@@ -77,6 +83,12 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
             <MenuItem onClick={() => (setDialog("invite"), setMenu(false))}>Convidar pessoas</MenuItem>
             {owner && <MenuItem onClick={() => (setDialog("channel"), setMenu(false))}>Criar canal</MenuItem>}
             {owner && <MenuItem onClick={() => (setDialog("rename"), setMenu(false))}>Renomear servidor</MenuItem>}
+            {owner && (
+              <MenuItem onClick={() => (iconInput.current?.click(), setMenu(false))}>
+                {server.icon_url ? "Trocar ícone" : "Adicionar ícone"}
+              </MenuItem>
+            )}
+            {owner && server.icon_url && <MenuItem onClick={() => (setIcon(null), setMenu(false))}>Remover ícone</MenuItem>}
             <MenuItem onClick={() => (toggleMute(server.id), setMenu(false))}>
               {isMuted(server.id) ? "Ativar notificações" : "Silenciar notificações"}
             </MenuItem>
@@ -139,6 +151,17 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
         ))}
       </div>
       {volumeMenu && <VolumeMenu {...volumeMenu} onClose={() => setVolumeMenu(null)} />}
+      <input
+        ref={iconInput}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (f) upload(me, f).then(setIcon, console.error);
+        }}
+      />
       {dialog === "invite" && <InviteDialog server={server} owner={owner} onClose={() => setDialog(null)} />}
       {dialog === "channel" && <ChannelDialog server={server} onClose={() => setDialog(null)} />}
       {dialog === "rename" && (

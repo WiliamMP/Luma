@@ -130,6 +130,7 @@ function ProfileForm({ me, p, onClose }: { me: string; p: Profile; onClose: () =
       <p className="mt-2 text-xs text-dim">Clique no avatar para trocar a imagem.</p>
       {msg && <p className={cn("mt-2 text-sm", msg.ok ? "text-online" : "text-danger")}>{msg.text}</p>}
       <MicPicker />
+      <Account />
       <div className="mt-5 flex items-center justify-between">
         <button className={cn(ghost, "flex items-center gap-2 px-0 text-danger hover:bg-transparent")} onClick={() => supabase.auth.signOut()}>
           <LogOut className="size-4" /> Sair da conta
@@ -189,6 +190,80 @@ function StatusPicker() {
         ))}
       </div>
       {status === "dnd" && <p className="mt-1 text-xs text-dim">Sem notificações enquanto estiver em Não perturbe.</p>}
+    </div>
+  );
+}
+
+/** password, email and account deletion */
+function Account() {
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [msg, setMsg] = useState<{ text: string; ok?: boolean } | null>(null);
+
+  async function run(action: () => Promise<{ error: unknown }>, ok: string) {
+    setMsg(null);
+    const { error } = await action();
+    setMsg(error ? { text: errorText(error) } : { text: ok, ok: true });
+    return !error;
+  }
+
+  if (!open)
+    return (
+      <button className={cn(ghost, "mt-4 px-0 hover:bg-transparent")} onClick={() => setOpen(true)}>
+        Conta: senha, email, excluir…
+      </button>
+    );
+
+  return (
+    <div className="mt-5 space-y-2">
+      <div className="text-xs font-semibold uppercase text-dim">Conta</div>
+      <form
+        className="flex gap-2"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (await run(() => supabase.auth.updateUser({ password }), "Senha trocada.")) setPassword("");
+        }}
+      >
+        <input className={input} type="password" placeholder="Senha nova" autoComplete="new-password" minLength={6} required value={password} onChange={(e) => setPassword(e.target.value)} />
+        <button className={button}>Trocar</button>
+      </form>
+      <form
+        className="flex gap-2"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (await run(() => supabase.auth.updateUser({ email }), "Enviamos links de confirmação: abra o do email novo (e o do atual, se chegar).")) setEmail("");
+        }}
+      >
+        <input className={input} type="email" placeholder="Email novo" required value={email} onChange={(e) => setEmail(e.target.value)} />
+        <button className={button}>Trocar</button>
+      </form>
+      {confirmDelete ? (
+        <div className="rounded-md border border-danger/50 p-3 text-sm">
+          <p className="mb-2">
+            Isso apaga sua conta, seus servidores (com canais e mensagens), suas mensagens e DMs. <strong>Não dá para desfazer.</strong>
+          </p>
+          <div className="flex justify-end gap-2">
+            <button className={ghost} onClick={() => setConfirmDelete(false)}>
+              Cancelar
+            </button>
+            <button
+              className={cn(button, "bg-danger")}
+              onClick={async () => {
+                if (await run(async () => await supabase.rpc("delete_account"), "Conta excluída.")) supabase.auth.signOut();
+              }}
+            >
+              Excluir minha conta
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button className={cn(ghost, "px-0 text-danger hover:bg-transparent")} onClick={() => setConfirmDelete(true)}>
+          Excluir conta…
+        </button>
+      )}
+      {msg && <p className={cn("text-sm", msg.ok ? "text-online" : "text-danger")}>{msg.text}</p>}
     </div>
   );
 }

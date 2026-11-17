@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { AtSign, CornerUpLeft, FileText, Hash, Loader2, Pencil, PlusCircle, Reply, Search, SmilePlus, Trash2, X } from "lucide-react";
+import { AtSign, CornerUpLeft, FileText, Hash, Loader2, Pencil, Pin, PinOff, PlusCircle, Reply, Search, SmilePlus, Trash2, X } from "lucide-react";
 import { errorText, fileUrl, isImage, open, openChannel, supabase, upload, useFileUrl, useProfile, type Message, type Target } from "@/lib";
 import { Avatar, Name } from "./ui";
 import { format, mentions } from "@/format";
@@ -8,7 +8,7 @@ import { useProfileCard } from "./Profile";
 
 const GROUP_MS = 5 * 60 * 1000;
 const PAGE = 100;
-const COLUMNS = "id, author_id, content, attachment_url, created_at, edited_at, reply_to, reactions";
+const COLUMNS = "id, author_id, content, attachment_url, created_at, edited_at, reply_to, reactions, pinned_at";
 /** a search result further back than this many messages is listed but not opened in the chat */
 const GAP = 1000;
 
@@ -44,7 +44,8 @@ export function Chat({ me, target, owner, focused, onSeen }: {
   /** last message id I had read when this chat opened: "Novas mensagens" goes after it */
   const [readMark, setReadMark] = useState(0);
   const jumpToNew = useRef(false);
-  const [search, setSearch] = useState<{ q: string; results: Message[] } | null>(null);
+  /** results panel under the header: search results or the pinned messages */
+  const [search, setSearch] = useState<{ title: string; results: Message[] } | null>(null);
   /** message to flash once it has been rendered (after loading it for a search result) */
   const pendingFlash = useRef<number | null>(null);
   const [replying, setReplying] = useState<Message | null>(null);
@@ -173,7 +174,26 @@ export function Chat({ me, target, owner, focused, onSeen }: {
       .order("id", { ascending: false })
       .limit(50);
     if (error) return setErr(errorText(error));
-    setSearch({ q, results: data ?? [] });
+    const n = data?.length ?? 0;
+    setSearch({ title: `${n === 0 ? "Nada encontrado" : `${n === 50 ? "50+" : n} resultado(s)`} para “${q}”`, results: data ?? [] });
+  }
+
+  async function showPins() {
+    const { data, error } = await supabase
+      .from("messages")
+      .select(COLUMNS)
+      .eq(col, target.id)
+      .not("pinned_at", "is", null)
+      .order("pinned_at", { ascending: false })
+      .limit(50);
+    if (error) return setErr(errorText(error));
+    setSearch({ title: data?.length ? "Mensagens fixadas" : "Nenhuma mensagem fixada", results: data ?? [] });
+  }
+
+  async function pin(m: Message) {
+    const { data, error } = await supabase.rpc("toggle_pin", { mid: m.id });
+    if (error) setErr(errorText(error));
+    else replace({ id: m.id, pinned_at: data });
   }
 
   // open a search result: flash it if loaded, else load everything between it and the oldest loaded message
@@ -330,6 +350,9 @@ export function Chat({ me, target, owner, focused, onSeen }: {
         {target.kind === "channel" ? <Hash className="size-5 text-dim" /> : <AtSign className="size-5 text-dim" />}
         {target.name}
         <span className="flex-1" />
+        <button title="Mensagens fixadas" className="text-dim hover:text-fg" onClick={showPins}>
+          <Pin className="size-4" />
+        </button>
         <form
           className="relative font-normal"
           onSubmit={(e) => (e.preventDefault(), runSearch(String(new FormData(e.currentTarget).get("q") ?? "")))}
@@ -341,9 +364,7 @@ export function Chat({ me, target, owner, focused, onSeen }: {
       {search && (
         <div className="absolute top-12 right-2 z-20 flex max-h-[60%] w-[420px] flex-col rounded-lg border border-line bg-bg shadow-2xl">
           <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-sm">
-            <span className="flex-1 truncate text-dim">
-              {search.results.length === 0 ? "Nada encontrado" : `${search.results.length === 50 ? "50+" : search.results.length} resultado(s)`} para “{search.q}”
-            </span>
+            <span className="flex-1 truncate text-dim">{search.title}</span>
             <button title="Fechar" className="text-dim hover:text-fg" onClick={() => setSearch(null)}>
               <X className="size-4" />
             </button>
@@ -385,6 +406,8 @@ export function Chat({ me, target, owner, focused, onSeen }: {
                 me={me}
                 myName={myName}
                 canDelete={m.author_id === me || owner}
+              canPin={target.kind === "dm" || owner}
+              onPin={() => pin(m)}
                 editing={editing === m.id}
                 onReact={(emoji) => react(m, emoji)}
                 onReply={() => startReply(m)}
@@ -465,13 +488,15 @@ function Typing({ ids }: { ids: string[] }) {
   return <div className="h-4 truncate px-1 pt-0.5 text-xs text-dim">{names}</div>;
 }
 
-function Row({ m, parent, grouped, me, myName, canDelete, editing, onReact, onReply, onEdit, onEditDone }: {
+function Row({ m, parent, grouped, me, myName, canDelete, canPin, onPin, editing, onReact, onReply, onEdit, onEditDone }: {
   m: Message;
   parent: Message | undefined;
   grouped: boolean;
   me: string;
   myName: string | undefined;
   canDelete: boolean;
+  canPin: boolean;
+  onPin: () => void;
   editing: boolean;
   onReact: (emoji: string) => void;
   onReply: () => void;
@@ -514,6 +539,7 @@ function Row({ m, parent, grouped, me, myName, canDelete, editing, onReact, onRe
                 {author?.username ?? "…"}
               </button>
               <span className="text-xs text-dim">{time.toLocaleString([], { dateStyle: "short", timeStyle: "short" })}</span>
+              {m.pinned_at && <Pin className="size-3 self-center text-dim" aria-label="Fixada" />}
             </div>
           )}
           {editing ? (
@@ -565,6 +591,11 @@ function Row({ m, parent, grouped, me, myName, canDelete, editing, onReact, onRe
           <button title="Responder" className={tool} onClick={onReply}>
             <Reply className="size-4" />
           </button>
+          {canPin && (
+            <button title={m.pinned_at ? "Desafixar" : "Fixar"} className={tool} onClick={onPin}>
+              {m.pinned_at ? <PinOff className="size-4" /> : <Pin className="size-4" />}
+            </button>
+          )}
           {mine && m.content && (
             <button title="Editar" className={tool} onClick={onEdit}>
               <Pencil className="size-4" />

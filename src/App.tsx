@@ -128,7 +128,7 @@ function Main({ me }: { me: string }) {
   const loadServers = () =>
     supabase
       .from("servers")
-      .select("id, name, owner_id")
+      .select("id, name, owner_id, icon_url")
       .order("created_at")
       .then(({ data, error }) => {
         if (error) return;
