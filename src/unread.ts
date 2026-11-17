@@ -63,14 +63,27 @@ export function useInbox(me: string, open: Target | null, focused: boolean) {
   return { unread: shown, markRead };
 }
 
-// ponytail: notifies for every server message. Add per-server mute when busy servers get noisy.
+// ponytail: mute is kept per device in localStorage. Move it to a table if it should follow the account.
+const MUTED_KEY = "luma:muted-servers";
+const muted = new Set<string>(JSON.parse(localStorage.getItem(MUTED_KEY) ?? "[]"));
+
+/** muted servers keep their unread badges but send no Windows notification */
+export const isMuted = (server: string) => muted.has(server);
+
+export function toggleMute(server: string) {
+  if (!muted.delete(server)) muted.add(server);
+  localStorage.setItem(MUTED_KEY, JSON.stringify([...muted]));
+}
+
 async function notify(m: Incoming) {
-  const author = await getProfile(m.author_id);
-  let title = author?.username ?? "Nova mensagem";
+  let title = "";
   if (m.channel_id) {
-    const { data } = await supabase.from("channels").select("name, servers(name)").eq("id", m.channel_id).maybeSingle();
-    if (data) title += ` em #${data.name} (${(data.servers as unknown as { name: string } | null)?.name ?? ""})`;
+    const { data } = await supabase.from("channels").select("name, server_id, servers(name)").eq("id", m.channel_id).maybeSingle();
+    if (data && isMuted(data.server_id)) return;
+    if (data) title = ` em #${data.name} (${(data.servers as unknown as { name: string } | null)?.name ?? ""})`;
   }
+  const author = await getProfile(m.author_id);
+  title = (author?.username ?? "Nova mensagem") + title;
   sendNotification({ title, body: m.content ? m.content.slice(0, 200) : "Enviou um arquivo" });
   getCurrentWindow().requestUserAttention(UserAttentionType.Informational);
 }

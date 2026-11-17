@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Hash, Headphones, HeadphoneOff, LogOut, Mic, MicOff, PhoneOff, Plus, Settings, Trash2, Volume2 } from "lucide-react";
 import { cn, errorText, putProfile, supabase, upload, useProfile, type Channel, type Server, type Target } from "@/lib";
-import type { Unread } from "@/unread";
+import { isMuted, toggleMute, type Unread } from "@/unread";
 import { Avatar, Badge, Modal, Name, button, ghost, input } from "./ui";
 
 export type Presence = Map<string, { voice: string | null }>;
@@ -66,6 +66,9 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
           <div className="absolute inset-x-2 top-13 z-10 rounded-lg border border-line bg-bg p-1.5 text-sm shadow-xl" onMouseLeave={() => setMenu(false)}>
             <MenuItem onClick={() => (setDialog("invite"), setMenu(false))}>Convidar pessoas</MenuItem>
             {owner && <MenuItem onClick={() => (setDialog("channel"), setMenu(false))}>Criar canal</MenuItem>}
+            <MenuItem onClick={() => (toggleMute(server.id), setMenu(false))}>
+              {isMuted(server.id) ? "Ativar notificações" : "Silenciar notificações"}
+            </MenuItem>
             {owner ? (
               <MenuItem danger onClick={() => (setDialog("delete"), setMenu(false))}>Excluir servidor</MenuItem>
             ) : (
