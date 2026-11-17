@@ -1,8 +1,35 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { errorText, supabase } from "./lib";
 
 const STUN: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
+
+// chosen microphone (deviceId, "" = system default), saved on this device
+const MIC_KEY = "luma:mic";
+let mic = localStorage.getItem(MIC_KEY) ?? "";
+const micListeners = new Set<() => void>();
+
+export function useMic(): [string, (id: string) => void] {
+  const value = useSyncExternalStore(
+    (l) => (micListeners.add(l), () => micListeners.delete(l)),
+    () => mic,
+  );
+  return [
+    value,
+    (id) => {
+      mic = id;
+      localStorage.setItem(MIC_KEY, id);
+      micListeners.forEach((l) => l());
+    },
+  ];
+}
+
+const micConstraints = (id: string): MediaTrackConstraints => ({
+  deviceId: id ? { ideal: id } : undefined, // ideal: an unplugged mic falls back to the default one
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+});
 
 /**
  * TURN relays audio for peers behind strict NAT. Short-lived credentials come from the
@@ -52,6 +79,10 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
   const ice = useRef<RTCConfiguration>({ iceServers: STUN });
   const deaf = useRef(deafened);
   deaf.current = deafened;
+  const mute = useRef(muted);
+  mute.current = muted;
+  const [micId] = useMic();
+  const usedMic = useRef(micId);
 
   const send = (s: Omit<Signal, "from">) =>
     chan.current?.send({ type: "broadcast", event: "signal", payload: { ...s, from: me } });
@@ -126,7 +157,8 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
     if (!room) return;
     let cancelled = false;
     setError(null);
-    Promise.all([navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }), iceServers()])
+    usedMic.current = micId;
+    Promise.all([navigator.mediaDevices.getUserMedia({ audio: micConstraints(micId) }), iceServers()])
       .then(([s, servers]) => {
         if (cancelled) return s.getTracks().forEach((t) => t.stop());
         stream.current = s;
@@ -192,6 +224,25 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
     }, 100);
     return () => clearInterval(tick);
   }, [room]);
+
+  // microphone changed in settings during a call: swap the track on every connection, no renegotiation
+  useEffect(() => {
+    if (!ready || !stream.current || micId === usedMic.current) return;
+    usedMic.current = micId;
+    navigator.mediaDevices
+      .getUserMedia({ audio: micConstraints(micId) })
+      .then((s) => {
+        const track = s.getAudioTracks()[0];
+        const old = stream.current;
+        if (!old) return track.stop(); // left the room meanwhile
+        track.enabled = !mute.current;
+        conns.current.forEach(({ pc }) => pc.getSenders().find((x) => x.track?.kind === "audio")?.replaceTrack(track).catch(console.error));
+        old.getAudioTracks().forEach((t) => (old.removeTrack(t), t.stop()));
+        old.addTrack(track);
+        meter(me, s);
+      })
+      .catch((e) => setError(errorText(e)));
+  }, [micId, ready]);
 
   useEffect(() => {
     stream.current?.getAudioTracks().forEach((t) => (t.enabled = !muted));

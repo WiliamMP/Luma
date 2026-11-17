@@ -389,7 +389,7 @@ export function UserPanel({ me, voiceName, voiceState, muted, deafened, onMute, 
         <button title={deafened ? "Ativar áudio" : "Desativar áudio"} className={cn(icon, deafened && "text-danger")} onClick={onDeafen}>
           {deafened ? <HeadphoneOff className="size-4" /> : <Headphones className="size-4" />}
         </button>
-        <button title="Perfil" className={icon} onClick={card.edit}>
+        <button title="Perfil e configurações" className={icon} onClick={card.edit}>
           <Settings className="size-4" />
         </button>
       </div>

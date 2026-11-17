@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { LogOut } from "lucide-react";
+import { getVersion } from "@tauri-apps/api/app";
+import { useMic } from "@/voice";
 import { cn, errorText, openDm, putProfile, supabase, upload, useProfile, PROFILE_COLUMNS, type Profile, type Target } from "@/lib";
 import { Avatar, Modal, button, ghost, input } from "./ui";
 
@@ -88,7 +90,7 @@ function ProfileDialog({ me, onClose }: { me: string; onClose: () => void }) {
   }
 
   return (
-    <Modal title="Meu perfil" onClose={onClose}>
+    <Modal title="Perfil e configurações" onClose={onClose}>
       <div className="flex items-start gap-4">
         <label className="cursor-pointer" title="Trocar avatar">
           <Avatar id={me} size={72} />
@@ -114,9 +116,44 @@ function ProfileDialog({ me, onClose }: { me: string; onClose: () => void }) {
       </div>
       <p className="mt-2 text-xs text-dim">Clique no avatar para trocar a imagem.</p>
       {msg && <p className={cn("mt-2 text-sm", msg.ok ? "text-online" : "text-danger")}>{msg.text}</p>}
-      <button className={cn(ghost, "mt-5 flex items-center gap-2 px-0 text-danger hover:bg-transparent")} onClick={() => supabase.auth.signOut()}>
-        <LogOut className="size-4" /> Sair da conta
-      </button>
+      <MicPicker />
+      <div className="mt-5 flex items-center justify-between">
+        <button className={cn(ghost, "flex items-center gap-2 px-0 text-danger hover:bg-transparent")} onClick={() => supabase.auth.signOut()}>
+          <LogOut className="size-4" /> Sair da conta
+        </button>
+        <Version />
+      </div>
     </Modal>
   );
+}
+
+function MicPicker() {
+  const [mic, setMic] = useMic();
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  useEffect(() => {
+    const load = () => navigator.mediaDevices.enumerateDevices().then((d) => setDevices(d.filter((x) => x.kind === "audioinput" && x.deviceId !== "default")));
+    load();
+    navigator.mediaDevices.addEventListener("devicechange", load);
+    return () => navigator.mediaDevices.removeEventListener("devicechange", load);
+  }, []);
+  return (
+    <label className="mt-5 block">
+      <span className="mb-1 block text-xs font-semibold uppercase text-dim">Microfone</span>
+      <select className={input} value={mic} onChange={(e) => setMic(e.target.value)}>
+        <option value="">Padrão do sistema</option>
+        {devices.map((d, i) => (
+          // labels only show once the app has had microphone access (after joining voice once)
+          <option key={d.deviceId} value={d.deviceId}>
+            {d.label || `Microfone ${i + 1}`}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function Version() {
+  const [v, setV] = useState("");
+  useEffect(() => void getVersion().then(setV, () => {}), []);
+  return v ? <span className="text-xs text-dim">Luma v{v}</span> : null;
 }
