@@ -194,6 +194,21 @@ function StatusPicker() {
   );
 }
 
+/** my uploads first (avatar, attachments), then the account; everything else cascades in the database */
+async function deleteAccount() {
+  const { data: session } = await supabase.auth.getSession();
+  const me = session.session?.user.id;
+  if (!me) return { error: new Error("Sessão expirada. Entre de novo.") };
+  for (;;) {
+    const { data: files, error } = await supabase.storage.from("uploads").list(me, { limit: 1000 });
+    if (error) return { error };
+    if (!files?.length) break;
+    const { error: e2 } = await supabase.storage.from("uploads").remove(files.map((f) => `${me}/${f.name}`));
+    if (e2) return { error: e2 };
+  }
+  return await supabase.rpc("delete_account");
+}
+
 /** password, email and account deletion */
 function Account() {
   const [open, setOpen] = useState(false);
@@ -251,7 +266,7 @@ function Account() {
             <button
               className={cn(button, "bg-danger")}
               onClick={async () => {
-                if (await run(async () => await supabase.rpc("delete_account"), "Conta excluída.")) supabase.auth.signOut();
+                if (await run(deleteAccount, "Conta excluída.")) supabase.auth.signOut();
               }}
             >
               Excluir minha conta

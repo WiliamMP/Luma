@@ -40,15 +40,19 @@ create policy "owner edits server" on public.servers for update to authenticated
   using (owner_id = auth.uid())
   with check (owner_id = auth.uid() and (icon_url is null or split_part(icon_url, '/', 1) = auth.uid()::text));
 
--- members can read their servers' icons (servers RLS limits the subquery to my servers)
+-- members can read their servers' icons (servers RLS limits the subquery to my servers).
+-- objects.name must be qualified: servers has its own `name` column, which a bare `name` would mean.
 create policy "read server icons" on storage.objects for select to authenticated using (
-  bucket_id = 'uploads' and exists (select 1 from public.servers s where s.icon_url = name)
+  bucket_id = 'uploads' and exists (select 1 from public.servers s where s.icon_url = objects.name)
 );
 
 -- ───────── delete my account ─────────
--- Removes the auth user; everything else goes with it through "on delete cascade"
+-- The app first deletes the files in my own folder (policy below), then calls delete_account(),
+-- which removes the auth user; everything else goes with it through "on delete cascade"
 -- (profile, servers I own with their channels and messages, my messages, DMs).
--- ponytail: uploaded files stay in storage as orphans; clean the user's folder too if storage cost matters.
+
+create policy "delete own files" on storage.objects for delete to authenticated
+  using (bucket_id = 'uploads' and (storage.foldername(name))[1] = auth.uid()::text);
 
 create function public.delete_account() returns void
 language sql security definer set search_path = '' as $$

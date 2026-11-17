@@ -60,8 +60,9 @@ function spans(text: string, me: string | undefined, key: string): ReactNode[] {
 /** does this text @mention `username`? (whole name, any case) */
 export function mentions(text: string, username: string | undefined) {
   if (!username) return false;
-  const name = username.replace(/[.]/g, "\\.");
-  return new RegExp(`(^|[^\\w.])@${name}(?![\\w.])`, "i").test(text);
+  const name = username.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // any character, in case a name was set outside the app
+  // a "." right after the name ends the sentence ("valeu @will."), but "@will.dev" is someone else
+  return new RegExp(`(^|[^\\w.])@${name}(?!\\w|\\.\\w)`, "i").test(text);
 }
 
 // ponytail: self-check for the parts that are easy to break; runs only in dev
@@ -71,4 +72,7 @@ if (import.meta.env.DEV) {
   console.assert(!mentions("mail a@will", "will"), "email is not a mention");
   console.assert(mentions("@will.dev ok", "will.dev"), "dot in name");
   console.assert(!mentions("@willxdev", "will.dev"), "dot is literal");
+  console.assert(mentions("valeu @will.", "will"), "sentence-ending period");
+  console.assert(!mentions("@will.dev", "will"), "longer dotted name");
+  console.assert(!mentions("@a", "a(b"), "odd characters do not throw");
 }

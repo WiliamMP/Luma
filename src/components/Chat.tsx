@@ -41,8 +41,8 @@ export function Chat({ me, target, owner, focused, onSeen }: {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
-  /** last message id I had read when this chat opened: "Novas mensagens" goes after it */
-  const [readMark, setReadMark] = useState(0);
+  /** first unread message from someone else when this chat opened: "Novas mensagens" goes above it */
+  const [firstNewId, setFirstNewId] = useState<number | null>(null);
   const jumpToNew = useRef(false);
   /** results panel under the header: search results or the pinned messages */
   const [search, setSearch] = useState<{ title: string; results: Message[] } | null>(null);
@@ -69,7 +69,7 @@ export function Chat({ me, target, owner, focused, onSeen }: {
     setHasMore(false);
     setReplying(null);
     setEditing(null);
-    setReadMark(0);
+    setFirstNewId(null);
     let live = true;
     // the read marker is fetched with the first page, before opening the chat marks everything read
     Promise.all([
@@ -80,8 +80,9 @@ export function Chat({ me, target, owner, focused, onSeen }: {
       if (error) setErr(errorText(error));
       const list = (data ?? []).reverse();
       const mark = Number(read?.last_id ?? 0);
-      jumpToNew.current = mark > 0 && list.some((m) => m.id > mark && m.author_id !== me);
-      setReadMark(mark);
+      const firstNew = mark > 0 ? list.find((m) => m.id > mark && m.author_id !== me) : undefined;
+      jumpToNew.current = !!firstNew;
+      setFirstNewId(firstNew?.id ?? null);
       setMessages(list);
       setHasMore(data?.length === PAGE);
     });
@@ -205,7 +206,7 @@ export function Chat({ me, target, owner, focused, onSeen }: {
     if (error) return setErr(errorText(error));
     if (!data?.length || data.length === GAP) return setErr("Essa mensagem é antiga demais para abrir aqui.");
     pendingFlash.current = id;
-    setMessages((prev) => [...data, ...prev]);
+    setMessages((prev) => [...data.filter((d) => d.id < (prev[0]?.id ?? Infinity)), ...prev]);
   }
 
   async function loadOlder() {
@@ -219,7 +220,7 @@ export function Chat({ me, target, owner, focused, onSeen }: {
     const el = list.current!;
     anchor.current = el.scrollHeight - el.scrollTop;
     setHasMore(data.length === PAGE);
-    setMessages((prev) => [...data.reverse(), ...prev]);
+    setMessages((prev) => [...data.reverse().filter((d) => d.id < (prev[0]?.id ?? Infinity)), ...prev]);
   }
 
   // on screen and the window is in front: everything up to the last message is read
@@ -322,12 +323,13 @@ export function Chat({ me, target, owner, focused, onSeen }: {
     const t = text.trim();
     if (!t) return;
     setText("");
+    suggestSeq.current++;
+    setSuggest(null);
     send(t, null, takeReply());
   }
 
   const byId = new Map(messages.map((m) => [m.id, m]));
-  // first message that arrived after my read marker (from someone else)
-  const newAt = readMark > 0 ? messages.findIndex((m) => m.id > readMark && m.author_id !== me) : -1;
+  const newAt = firstNewId === null ? -1 : messages.findIndex((m) => m.id === firstNewId);
 
   return (
     <div
