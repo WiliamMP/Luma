@@ -1,0 +1,58 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Luma",
+  "version": "0.1.0",
+  "identifier": "com.will.luma",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1430",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Luma",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 940,
+        "minHeight": 560,
+        "decorations": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' data: blob: https://*.supabase.co",
+        "media-src": "'self' blob: mediastream:",
+        "font-src": "'self' data:",
+        "connect-src": "ipc: http://ipc.localhost https://*.supabase.co wss://*.supabase.co"
+      },
+      "devCsp": {
+        "default-src": "'self'",
+        "script-src": "'self' 'unsafe-inline'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' data: blob: https://*.supabase.co",
+        "media-src": "'self' blob: mediastream:",
+        "font-src": "'self' data:",
+        "connect-src": "ipc: http://ipc.localhost https://*.supabase.co wss://*.supabase.co ws://localhost:1430 http://localhost:1430"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "publisher": "WiliamMP",
+    "shortDescription": "Chat com servidores, canais, DMs e voz",
+    "copyright": "© 2026 WiliamMP",
+    "category": "SocialNetworking",
+    "windows": {
+      "nsis": { "languages": ["PortugueseBR"], "installMode": "currentUser", "installerIcon": "icons/icon.ico" }
+    }
+  }
+}

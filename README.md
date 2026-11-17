@@ -1,0 +1,35 @@
+# Luma
+
+Desktop chat app (Tauri + React + Supabase): servers, text and voice channels, direct messages, image/file uploads, profiles with avatars, online status.
+
+## Setup (once)
+
+1. Create a free project at [supabase.com](https://supabase.com).
+2. Supabase > **SQL Editor** > paste all of `supabase/schema.sql` > **Run**. Then the same with `supabase/002_unread.sql`.
+3. Supabase > **Authentication > Sign In / Providers > Email**: turn off **Confirm email** (a desktop app has no page for the confirmation link to land on). Leave it on only if you set up a redirect.
+4. Copy `.env.example` to `.env` and fill in the values from **Project Settings > API** (Project URL and the `anon` public key).
+
+## Run
+
+```sh
+npm install
+npx tauri dev      # development
+npx tauri build    # installer in src-tauri/target/release/bundle/nsis
+```
+
+The Supabase URL and key are baked in at build time, so rebuild after changing `.env`.
+
+## How it works
+
+- Data and permissions: Postgres tables with row level security (`supabase/schema.sql`). Members only see their servers, channels and messages; actions that need several writes (create server, join with invite, open DM) are SQL functions called with `supabase.rpc`.
+- Live updates: Supabase Realtime `postgres_changes` for messages, channels, members and DMs.
+- Online status and "who is in which voice channel": one Realtime presence channel (`online`).
+- Unread: a `reads` table keeps the last message id each user has seen per channel/DM; `unread_counts()` counts the rest. Windows notifications come from `tauri-plugin-notification`.
+- Voice: WebRTC peer-to-peer mesh (`src/voice.ts`), signalling over a Realtime broadcast channel per voice room. STUN only.
+
+## Known limits
+
+- Voice is a mesh: fine for small rooms (~8 people). Peers behind strict NAT need a TURN server (add it to `ICE` in `src/voice.ts`).
+- Chat loads the last 100 messages per channel, no scroll-back yet.
+- Uploads go to a public bucket: anyone with a file URL can open it.
+- Notifications fire for every message while the app is in the background; no per-server mute yet.

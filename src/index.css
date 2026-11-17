@@ -1,0 +1,24 @@
+@import "tailwindcss";
+@import "@fontsource-variable/geist";
+
+/* Will dark palette (same base as will-repo's .dark theme) */
+@theme {
+  --font-sans: "Geist Variable", "Segoe UI Variable", sans-serif;
+  --color-bg: #0f1117;
+  --color-panel: #13151d;
+  --color-card: #161922;
+  --color-raised: #1d2130;
+  --color-line: #252a38;
+  --color-fg: #e6e8ef;
+  --color-dim: #8a90a6;
+  --color-primary: #7c5cff;
+  --color-online: #3ecf8e;
+  --color-danger: #f0475b;
+}
+
+html, body, #root { height: 100%; }
+body { margin: 0; background: var(--color-bg); color: var(--color-fg); font-family: var(--font-sans); user-select: none; }
+.selectable, input, textarea { user-select: text; }
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-thumb { background: var(--color-line); border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
