@@ -30,6 +30,46 @@ export function useMic(): [string, (id: string) => void] {
   ];
 }
 
+// volume per person (0..1, default 1), saved on this device
+const VOLUME_KEY = "luma:volumes";
+let volumes: Record<string, number> = JSON.parse(localStorage.getItem(VOLUME_KEY) ?? "{}");
+const volumeListeners = new Set<() => void>();
+const volumeOf = (id: string) => volumes[id] ?? 1;
+
+export function useVolumes(): [Record<string, number>, (id: string, v: number) => void] {
+  const value = useSyncExternalStore(
+    (l) => (volumeListeners.add(l), () => volumeListeners.delete(l)),
+    () => volumes,
+  );
+  return [
+    value,
+    (id, v) => {
+      volumes = { ...volumes, [id]: v };
+      localStorage.setItem(VOLUME_KEY, JSON.stringify(volumes));
+      volumeListeners.forEach((l) => l());
+    },
+  ];
+}
+
+/** short two-note chime, rising when someone joins the call and falling when someone leaves */
+export function chime(up: boolean) {
+  const ctx = new AudioContext();
+  const notes = up ? [523, 784] : [784, 523];
+  notes.forEach((f, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const t = ctx.currentTime + i * 0.12;
+    osc.frequency.value = f;
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.15, t + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.2);
+  });
+  setTimeout(() => ctx.close(), 600);
+}
+
 const micConstraints = (id: string): MediaTrackConstraints => ({
   deviceId: id ? { ideal: id } : undefined, // ideal: an unplugged mic falls back to the default one
   echoCancellation: true,
@@ -106,6 +146,7 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
     const audio = new Audio();
     audio.autoplay = true;
     audio.muted = deaf.current;
+    audio.volume = volumeOf(id);
     const peer: Peer = { pc, audio, queue: [], video: null };
     stream.current?.getTracks().forEach((t) => pc.addTrack(t, stream.current!));
     if (offerer) {
@@ -262,6 +303,11 @@ export function useVoice(me: string, room: string | null, peers: string[], muted
   useEffect(() => {
     conns.current.forEach((p) => (p.audio.muted = deafened));
   }, [deafened]);
+
+  const [vols] = useVolumes();
+  useEffect(() => {
+    conns.current.forEach((p, id) => (p.audio.volume = vols[id] ?? 1));
+  }, [vols]);
 
   async function share() {
     let s: MediaStream;

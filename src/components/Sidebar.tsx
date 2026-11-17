@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Hash, Headphones, HeadphoneOff, Mic, Pencil, MicOff, PhoneOff, Plus, ScreenShare, ScreenShareOff, Settings, Trash2, Volume2 } from "lucide-react";
 import { cn, errorText, openChannel, openDm, supabase, useProfile, type Channel, type Server, type Target } from "@/lib";
 import { useProfileCard } from "./Profile";
+import { useVolumes } from "@/voice";
 import { isMuted, toggleMute, type Unread } from "@/unread";
 import { Avatar, Badge, Modal, Name, button, ghost, input } from "./ui";
 
@@ -34,6 +35,8 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
   const [menu, setMenu] = useState(false);
   const [dialog, setDialog] = useState<null | "invite" | "channel" | "delete" | "rename">(null);
   const [renaming, setRenaming] = useState<Channel | null>(null);
+  /** right-click on someone in a voice channel: their volume slider at the mouse */
+  const [volumeMenu, setVolumeMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const owner = server.owner_id === me;
   const current = useRef(target);
   current.current = target;
@@ -116,7 +119,13 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
                 </button>
                 {kind === "voice" &&
                   inVoice(c.id).map((id) => (
-                    <div key={id} className="flex cursor-pointer items-center gap-2 py-1 pl-8 text-sm text-dim hover:text-fg" onClick={() => card.show(id)}>
+                    <div
+                      key={id}
+                      className="flex cursor-pointer items-center gap-2 py-1 pl-8 text-sm text-dim hover:text-fg"
+                      title={id === me ? undefined : "Botão direito: volume"}
+                      onClick={() => card.show(id)}
+                      onContextMenu={(e) => id !== me && (e.preventDefault(), setVolumeMenu({ id, x: e.clientX, y: e.clientY }))}
+                    >
                       <div className={cn("rounded-full ring-2 transition-shadow", speaking.has(id) ? "ring-online" : "ring-transparent")}>
                         <Avatar id={id} size={22} />
                       </div>
@@ -129,6 +138,7 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
           </div>
         ))}
       </div>
+      {volumeMenu && <VolumeMenu {...volumeMenu} onClose={() => setVolumeMenu(null)} />}
       {dialog === "invite" && <InviteDialog server={server} owner={owner} onClose={() => setDialog(null)} />}
       {dialog === "channel" && <ChannelDialog server={server} onClose={() => setDialog(null)} />}
       {dialog === "rename" && (
@@ -167,6 +177,34 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
         </Modal>
       )}
     </>
+  );
+}
+
+function VolumeMenu({ id, x, y, onClose }: { id: string; x: number; y: number; onClose: () => void }) {
+  const [volumes, setVolume] = useVolumes();
+  const v = Math.round((volumes[id] ?? 1) * 100);
+  return (
+    <div className="fixed inset-0 z-50" onMouseDown={onClose} onContextMenu={(e) => (e.preventDefault(), onClose())}>
+      <div
+        className="absolute w-56 rounded-lg border border-line bg-bg p-3 text-sm shadow-xl"
+        style={{ left: Math.min(x, window.innerWidth - 240), top: Math.min(y, window.innerHeight - 100) }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="mb-2 flex items-center justify-between">
+          <Name id={id} className="truncate font-medium" />
+          <span className="text-xs text-dim">{v}%</span>
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          value={v}
+          className="w-full accent-primary"
+          onChange={(e) => setVolume(id, Number(e.target.value) / 100)}
+          autoFocus
+        />
+      </div>
+    </div>
   );
 }
 

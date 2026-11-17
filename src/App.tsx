@@ -3,7 +3,7 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import type { RealtimeChannel, Session } from "@supabase/supabase-js";
 import { configured, errorText, supabase, type Server, type Target } from "./lib";
-import { useVoice, VOICE_PROTOCOL } from "./voice";
+import { chime, useVoice, VOICE_PROTOCOL } from "./voice";
 import { useInbox } from "./unread";
 import { Auth } from "./components/Auth";
 import { Rail } from "./components/Rail";
@@ -153,6 +153,17 @@ function Main({ me }: { me: string }) {
     const room = voiceState.ready ? voice?.id ?? null : null;
     if (subscribed) online.current?.track({ voice: room, screen: !!room && !!voiceState.screen, v: VOICE_PROTOCOL });
   }, [subscribed, voiceState.ready, voice?.id, !!voiceState.screen]);
+
+  // chime when someone joins or leaves my call (and when I join or leave it); quiet while deafened
+  const others = voiceState.ready ? peers.filter((id) => id !== me).sort().join(",") : null;
+  const lastOthers = useRef<string | null>(null);
+  useEffect(() => {
+    const before = lastOthers.current;
+    lastOthers.current = others;
+    if (deafened || before === others) return;
+    if (before === null || others === null) return chime(others !== null); // I joined / left
+    chime(others.split(",").filter(Boolean).length > before.split(",").filter(Boolean).length);
+  }, [others]);
 
   // screens shared in my voice room (mine included)
   const shares = voice
