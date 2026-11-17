@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 import { Copy, Minus, Square, X } from "lucide-react";
+import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { cn } from "@/lib";
 
-const win = getCurrentWindow();
+// null in a plain browser (npm run dev without Tauri), where there is no native window to control
+const win = isTauri() ? getCurrentWindow() : null;
 
 /** mousedown on an empty part of the title bar: drag the window, double-click maximizes.
  *  `target === currentTarget` skips clicks that started on a tab or button inside it. */
 export function dragWindow(e: React.MouseEvent) {
-  if (e.button !== 0 || e.target !== e.currentTarget) return;
+  if (!win || e.button !== 0 || e.target !== e.currentTarget) return;
   if (e.detail === 2) win.toggleMaximize();
   else win.startDragging();
 }
@@ -18,6 +20,7 @@ export function WindowControls() {
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
+    if (!win) return;
     const sync = () => win.isMaximized().then(setMaximized, () => {});
     sync();
     // onResized also fires on maximize, restore and Windows snap
@@ -27,6 +30,7 @@ export function WindowControls() {
     };
   }, []);
 
+  if (!win) return null;
   const btn = "grid w-11 place-items-center text-dim transition-colors hover:text-fg";
   return (
     <div className="flex self-stretch">

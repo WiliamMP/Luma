@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Crown, UserMinus, Volume2 } from "lucide-react";
 import { openChannel, supabase, useProfile, type Server } from "@/lib";
-import { Avatar, Modal, Name, button, ghost } from "./ui";
+import { Avatar, Modal, Name, dangerButton, ghost } from "./ui";
 import { useProfileCard } from "./Profile";
 import type { Presence } from "./Sidebar";
 
@@ -68,7 +68,7 @@ export function Members({ server, me, presence }: { server: Server; me: string; 
               Cancelar
             </button>
             <button
-              className={`${button} bg-danger`}
+              className={dangerButton}
               onClick={async () => (await supabase.from("members").delete().match({ server_id: server.id, user_id: kicking }), setKicking(null))}
             >
               Expulsar

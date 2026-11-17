@@ -4,7 +4,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { useMic } from "@/voice";
 import { useMyStatus } from "@/unread";
 import { cn, errorText, openDm, putProfile, supabase, upload, useProfile, PROFILE_COLUMNS, STATUS_LABEL, type Profile, type Status, type Target } from "@/lib";
-import { Avatar, Modal, STATUS_DOT, button, ghost, input } from "./ui";
+import { Avatar, Modal, STATUS_DOT, button, dangerButton, ghost, input } from "./ui";
 
 const Ctx = createContext({ show: (_id: string) => {}, edit: () => {} });
 
@@ -264,7 +264,7 @@ function Account() {
               Cancelar
             </button>
             <button
-              className={cn(button, "bg-danger")}
+              className={dangerButton}
               onClick={async () => {
                 if (await run(deleteAccount, "Conta excluída.")) supabase.auth.signOut();
               }}

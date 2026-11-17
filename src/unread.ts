@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
+import { isTauri } from "@tauri-apps/api/core";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { useSyncExternalStore } from "react";
 import { getProfile, supabase, type Status, type Target } from "./lib";
@@ -30,7 +31,8 @@ export function useInbox(me: string, open: Target | null, focused: boolean) {
       }, 300);
     };
     load();
-    isPermissionGranted().then((ok) => void (ok || requestPermission()));
+    // outside Tauri (npm run dev in a browser) this throws and the inbox below would never subscribe
+    if (isTauri()) isPermissionGranted().then((ok) => void (ok || requestPermission()));
 
     // no filter: RLS only delivers messages from channels/DMs this user can read
     const sub = supabase

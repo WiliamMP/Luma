@@ -4,7 +4,7 @@ import { cn, errorText, openChannel, openDm, supabase, upload, useProfile, type 
 import { useProfileCard } from "./Profile";
 import { useVolumes } from "@/voice";
 import { isMuted, toggleMute, type Unread } from "@/unread";
-import { Avatar, Badge, Modal, Name, button, ghost, input } from "./ui";
+import { Avatar, Badge, Modal, Name, button, dangerButton, ghost, input } from "./ui";
 
 /** v: voice protocol version of that person's app (see VOICE_PROTOCOL) */
 export type Presence = Map<string, { voice: string | null; screen: boolean; v: number; status: Status }>;
@@ -193,7 +193,7 @@ export function ServerSidebar({ server, me, target, onTarget, unread, presence, 
           <p className="mb-4 text-sm text-dim">Todos os canais e mensagens serão apagados. Não dá para desfazer.</p>
           <div className="flex justify-end gap-2">
             <button className={ghost} onClick={() => setDialog(null)}>Cancelar</button>
-            <button className={cn(button, "bg-danger")} onClick={async () => (await supabase.from("servers").delete().eq("id", server.id), onGone())}>
+            <button className={dangerButton} onClick={async () => (await supabase.from("servers").delete().eq("id", server.id), onGone())}>
               Excluir
             </button>
           </div>

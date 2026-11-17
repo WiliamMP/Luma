@@ -78,4 +78,6 @@ export const input =
   "w-full rounded-md border border-line bg-bg px-3 py-2 text-sm outline-none placeholder:text-dim focus:border-primary";
 export const button =
   "rounded-md bg-primary px-4 py-2 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-50";
+/** red variant: adding bg-danger to `button` loses to bg-primary in the generated CSS, so it gets its own string */
+export const dangerButton = button.replace("bg-primary", "bg-danger");
 export const ghost = "rounded-md px-4 py-2 text-sm text-dim transition hover:bg-raised hover:text-fg";
