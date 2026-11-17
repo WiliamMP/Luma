@@ -1,0 +1,22 @@
+# Type-checks and builds the frontend on every push to master, so a broken change shows up
+# right away instead of only when a version tag is pushed.
+name: Check
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build # tsc && vite build
