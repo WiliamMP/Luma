@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -76,7 +76,36 @@ export async function upload(userId: string, file: File) {
   const path = `${userId}/${crypto.randomUUID()}-${safe}`;
   const { error } = await supabase.storage.from("uploads").upload(path, file, { contentType: file.type });
   if (error) throw error;
-  return supabase.storage.from("uploads").getPublicUrl(path).data.publicUrl;
+  return path;
+}
+
+// private bucket: stored values are paths, shown through signed URLs cached until shortly before they expire
+const SIGNED_FOR = 3600;
+const signed = new Map<string, { url: Promise<string | null>; until: number }>();
+
+export function fileUrl(path: string): Promise<string | null> {
+  if (path.startsWith("http")) return Promise.resolve(path); // saved before the bucket went private
+  const hit = signed.get(path);
+  if (hit && hit.until > Date.now()) return hit.url;
+  const url = supabase.storage
+    .from("uploads")
+    .createSignedUrl(path, SIGNED_FOR)
+    .then(({ data }) => data?.signedUrl ?? null);
+  signed.set(path, { url, until: Date.now() + (SIGNED_FOR - 300) * 1000 });
+  url.then((u) => u || signed.delete(path)); // failed: try again next time
+  return url;
+}
+
+export function useFileUrl(path: string | null | undefined) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    setUrl(null);
+    if (!path) return;
+    let live = true;
+    fileUrl(path).then((u) => live && setUrl(u));
+    return () => void (live = false);
+  }, [path]);
+  return url;
 }
 
 const errorsPt: [string, string][] = [

@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { X } from "lucide-react";
-import { cn, useProfile } from "@/lib";
+import { cn, useFileUrl, useProfile } from "@/lib";
 
 const hues = ["#7c5cff", "#3ecf8e", "#f0475b", "#f5a524", "#23b5d3", "#e85dce"];
 
@@ -20,9 +20,10 @@ export function Initials({ name, url, size = 40, className }: { name: string; ur
 
 export function Avatar({ id, size = 40, online }: { id: string; size?: number; online?: boolean }) {
   const p = useProfile(id);
+  const url = useFileUrl(p?.avatar_url);
   return (
     <div className="relative shrink-0">
-      <Initials name={p?.username ?? "?"} url={p?.avatar_url} size={size} />
+      <Initials name={p?.username ?? "?"} url={url} size={size} />
       {online !== undefined && (
         <span
           className={cn(

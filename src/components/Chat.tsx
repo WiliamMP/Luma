@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AtSign, FileText, Hash, Loader2, PlusCircle, Trash2 } from "lucide-react";
-import { errorText, isImage, open, supabase, upload, useProfile, type Message, type Target } from "@/lib";
+import { errorText, fileUrl, isImage, open, supabase, upload, useFileUrl, useProfile, type Message, type Target } from "@/lib";
 import { Avatar } from "./ui";
 
 const GROUP_MS = 5 * 60 * 1000;
@@ -178,7 +178,7 @@ function Row({ m, grouped, mine }: { m: Message; grouped: boolean; mine: boolean
           </div>
         )}
         {m.content && <p className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">{linkify(m.content)}</p>}
-        {m.attachment_url && <Attachment url={m.attachment_url} />}
+        {m.attachment_url && <Attachment path={m.attachment_url} />}
       </div>
       {mine && (
         <button
@@ -193,12 +193,20 @@ function Row({ m, grouped, mine }: { m: Message; grouped: boolean; mine: boolean
   );
 }
 
-function Attachment({ url }: { url: string }) {
-  const name = decodeURIComponent(url.split("/").pop() ?? "").replace(/^[0-9a-f-]{36}-/, "");
-  return isImage(url) ? (
-    <img src={url} alt={name} className="mt-1 max-h-80 max-w-md cursor-pointer rounded-lg" onClick={() => open(url)} />
+/** `path` is a storage path (private bucket) or, for old messages, a full public URL */
+function Attachment({ path }: { path: string }) {
+  const url = useFileUrl(path);
+  const name = decodeURIComponent(path.split("/").pop() ?? "").replace(/^[0-9a-f-]{36}-/, "");
+  // signed URLs expire after an hour: ask for a fresh one when opening
+  const show = () => fileUrl(path).then((u) => u && open(u));
+  return isImage(path) ? (
+    url ? (
+      <img src={url} alt={name} className="mt-1 max-h-80 max-w-md cursor-pointer rounded-lg" onClick={show} />
+    ) : (
+      <div className="mt-1 h-40 w-64 animate-pulse rounded-lg bg-raised" />
+    )
   ) : (
-    <button className="mt-1 flex items-center gap-2 rounded-lg border border-line bg-raised px-3 py-2 text-sm text-primary hover:underline" onClick={() => open(url)}>
+    <button className="mt-1 flex items-center gap-2 rounded-lg border border-line bg-raised px-3 py-2 text-sm text-primary hover:underline" onClick={show}>
       <FileText className="size-5" /> {name}
     </button>
   );

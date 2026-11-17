@@ -5,7 +5,7 @@ Desktop chat app (Tauri + React + Supabase): servers, text and voice channels, d
 ## Setup (once)
 
 1. Create a free project at [supabase.com](https://supabase.com).
-2. Supabase > **SQL Editor** > paste all of `supabase/schema.sql` > **Run**. Then the same with `supabase/002_unread.sql`.
+2. Supabase > **SQL Editor** > paste all of `supabase/schema.sql` > **Run**. Then the same with `supabase/002_unread.sql` and `supabase/003_private_uploads.sql`.
 3. Supabase > **Authentication > Sign In / Providers > Email**: turn off **Confirm email** (a desktop app has no page for the confirmation link to land on). Leave it on only if you set up a redirect.
 4. Supabase > **Authentication > Emails > Reset Password**: put the code in the message body, e.g. `Seu código do Luma: {{ .Token }}`. The app's "Esqueci minha senha" screen asks for that code (the default template only has a link, which has nowhere to land in a desktop app).
 5. Copy `.env.example` to `.env` and fill in the values from **Project Settings > API** (Project URL and the `anon` public key).
@@ -45,5 +45,4 @@ The Supabase URL and key are baked in at build time, so rebuild after changing `
 ## Known limits
 
 - Voice is a mesh: fine for small rooms (~8 people).
-- Uploads go to a public bucket: anyone with a file URL can open it.
 - Server mute ("Silenciar notificações") is saved per device, not per account.
