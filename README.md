@@ -31,6 +31,5 @@ The Supabase URL and key are baked in at build time, so rebuild after changing `
 ## Known limits
 
 - Voice is a mesh: fine for small rooms (~8 people). Peers behind strict NAT need a TURN server (add it to `ICE` in `src/voice.ts`).
-- Chat loads the last 100 messages per channel, no scroll-back yet.
 - Uploads go to a public bucket: anyone with a file URL can open it.
 - Notifications fire for every message while the app is in the background; no per-server mute yet.

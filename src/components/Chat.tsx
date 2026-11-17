@@ -4,6 +4,8 @@ import { errorText, isImage, open, supabase, upload, useProfile, type Message, t
 import { Avatar } from "./ui";
 
 const GROUP_MS = 5 * 60 * 1000;
+const PAGE = 100;
+const COLUMNS = "id, author_id, content, attachment_url, created_at";
 
 export function Chat({ me, target, focused, onSeen }: {
   me: string;
@@ -15,19 +17,30 @@ export function Chat({ me, target, focused, onSeen }: {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
   const list = useRef<HTMLDivElement>(null);
+  const loadingOlder = useRef(false);
+  /** distance from the bottom to keep after older messages are prepended, so the view does not jump */
+  const anchor = useRef<number | null>(null);
+  const current = useRef(target.id);
+  current.current = target.id;
   const col = target.kind === "channel" ? "channel_id" : "dm_id";
 
   useEffect(() => {
     setMessages([]);
-    // ponytail: last 100 only, no scroll-back. Add "load older" with .lt("id", oldest) when history matters.
+    setHasMore(false);
+    let live = true;
     supabase
       .from("messages")
-      .select("id, author_id, content, attachment_url, created_at")
+      .select(COLUMNS)
       .eq(col, target.id)
       .order("id", { ascending: false })
-      .limit(100)
-      .then(({ data }) => setMessages((data ?? []).reverse()));
+      .limit(PAGE)
+      .then(({ data }) => {
+        if (!live) return;
+        setMessages((data ?? []).reverse());
+        setHasMore(data?.length === PAGE);
+      });
     const sub = supabase
       .channel(`messages:${target.id}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `${col}=eq.${target.id}` }, ({ new: m }) =>
@@ -37,8 +50,25 @@ export function Chat({ me, target, focused, onSeen }: {
         setMessages((prev) => prev.filter((p) => p.id !== old.id)),
       )
       .subscribe();
-    return () => void supabase.removeChannel(sub);
+    return () => {
+      live = false;
+      void supabase.removeChannel(sub);
+    };
   }, [target.id]);
+
+  async function loadOlder() {
+    const oldest = messages[0]?.id;
+    if (!hasMore || loadingOlder.current || !oldest) return;
+    loadingOlder.current = true;
+    const id = target.id;
+    const { data } = await supabase.from("messages").select(COLUMNS).eq(col, id).lt("id", oldest).order("id", { ascending: false }).limit(PAGE);
+    loadingOlder.current = false;
+    if (!data || id !== current.current) return; // failed (next scroll retries) or the user switched channel meanwhile
+    const el = list.current!;
+    anchor.current = el.scrollHeight - el.scrollTop;
+    setHasMore(data.length === PAGE);
+    setMessages((prev) => [...data.reverse(), ...prev]);
+  }
 
   // on screen and the window is in front: everything up to the last message is read
   const lastId = messages.at(-1)?.id;
@@ -46,9 +76,12 @@ export function Chat({ me, target, focused, onSeen }: {
     if (focused && lastId) onSeen(target.id, lastId);
   }, [focused, lastId]);
 
-  // stick to the bottom when new messages arrive
+  // stick to the bottom when new messages arrive; keep the position when older ones are prepended
   useLayoutEffect(() => {
-    list.current?.scrollTo({ top: list.current.scrollHeight });
+    const el = list.current;
+    if (!el) return;
+    el.scrollTop = anchor.current === null ? el.scrollHeight : el.scrollHeight - anchor.current;
+    anchor.current = null;
   }, [messages.length]);
 
   async function send(content: string, attachment_url: string | null = null) {
@@ -56,7 +89,7 @@ export function Chat({ me, target, focused, onSeen }: {
     const { data, error } = await supabase
       .from("messages")
       .insert({ [col]: target.id, content, attachment_url })
-      .select("id, author_id, content, attachment_url, created_at")
+      .select(COLUMNS)
       .single();
     if (error) return setErr(errorText(error));
     setMessages((prev) => (prev.some((p) => p.id === data.id) ? prev : [...prev, data]));
@@ -87,7 +120,8 @@ export function Chat({ me, target, focused, onSeen }: {
         {target.kind === "channel" ? <Hash className="size-5 text-dim" /> : <AtSign className="size-5 text-dim" />}
         {target.name}
       </header>
-      <div ref={list} className="selectable flex-1 overflow-y-auto py-4">
+      <div ref={list} className="selectable flex-1 overflow-y-auto py-4" onScroll={(e) => e.currentTarget.scrollTop < 300 && loadOlder()}>
+        {hasMore && <Loader2 className="mx-auto mb-2 size-5 animate-spin text-dim" />}
         {messages.length === 0 && <p className="px-4 text-sm text-dim">Nenhuma mensagem ainda. Diga oi!</p>}
         {messages.map((m, i) => {
           const prev = messages[i - 1];
