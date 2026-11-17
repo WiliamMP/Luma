@@ -22,6 +22,9 @@ function flash(id: number) {
   el?.animate([{ backgroundColor: "rgb(124 92 255 / 0.25)" }, { backgroundColor: "transparent" }], { duration: 1500 });
 }
 
+/** unsent text per channel/DM */
+const drafts = new Map<string, string>();
+
 const QUICK_EMOJI = ["👍", "❤️", "😂", "😮", "😢", "🔥", "🎉", "👀"];
 
 export function Chat({ me, target, owner, focused, onSeen }: {
@@ -33,7 +36,9 @@ export function Chat({ me, target, owner, focused, onSeen }: {
   onSeen: (target: string, lastId: number) => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [text, setText] = useState("");
+  // the half-typed message survives switching channel (kept in memory until the app closes)
+  const [text, setTextState] = useState(() => drafts.get(target.id) ?? "");
+  const setText = (t: string) => (setTextState(t), t ? drafts.set(target.id, t) : drafts.delete(target.id));
   const myName = useProfile(me)?.username;
   /** @mention autocomplete: matching usernames and the highlighted one */
   const [suggest, setSuggest] = useState<{ names: string[]; pick: number } | null>(null);
